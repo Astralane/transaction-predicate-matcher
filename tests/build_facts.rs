@@ -104,6 +104,7 @@ fn v0_alt_resolved_vs_unresolved() {
 
     // match_view: defers without the cache, matches with it.
     let rule = Rule::from_row(
+        7,
         "w".into(),
         true,
         OnUnknown::Skip,
@@ -112,9 +113,6 @@ fn v0_alt_resolved_vs_unresolved() {
     )
     .unwrap();
     let rs = RuleSet::new(vec![rule]);
-    assert!(matches!(rs.match_view(&view, None), MatchResult::Deferred));
-    match rs.match_view(&view, Some(&cache)) {
-        MatchResult::Matched(i) => assert_eq!(i, 0),
-        _ => panic!("should match the only rule with full cache"),
-    }
+    assert_eq!(rs.match_view(&view, None), MatchResult::Deferred);
+    assert_eq!(rs.match_view(&view, Some(&cache)), MatchResult::Matched(7));
 }

@@ -18,9 +18,10 @@ pub struct RuleSet {
     inner: ArcSwap<Compiled>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MatchResult {
-    /// The position (in the rule `Vec`) of the first matching rule. Map it to an action.
-    Matched(usize),
+    /// The `id` of the first matching rule (rules are tried in `Vec` order). Map it to an action.
+    Matched(i64),
     /// No rule matched.
     NoMatch,
     /// Partial ALT (policy A): consumer should resolve tables and re-submit.
@@ -63,25 +64,25 @@ impl RuleSet {
                 continue;
             }
             if eval_rule(rule, &facts) {
-                return MatchResult::Matched(i);
+                return MatchResult::Matched(rule.id);
             }
         }
         MatchResult::NoMatch
     }
 
     /// First match by brute force over all enabled rules in order, ignoring the index.
-    /// Used by partial-ALT policy (B) and as the property-test oracle. Does not defer.
+    /// Used by partial-ALT policy (B) and as the property-test oracle. Never returns `Deferred`
+    /// (it evaluates even when accounts are unresolved, per `on_unknown`).
     pub fn match_view_scan<D: TransactionData>(
         &self,
         view: &SanitizedTransactionView<D>,
         alt: Option<&AccountLookupTableCache>,
-    ) -> Option<usize> {
+    ) -> MatchResult {
         let facts = ViewFacts::new(view, alt);
         let rs = self.inner.load();
-        rs.rules
-            .iter()
-            .enumerate()
-            .find(|(_, r)| r.enabled && eval_rule(r, &facts))
-            .map(|(i, _)| i)
+        match rs.rules.iter().find(|r| r.enabled && eval_rule(r, &facts)) {
+            Some(r) => MatchResult::Matched(r.id),
+            None => MatchResult::NoMatch,
+        }
     }
 }

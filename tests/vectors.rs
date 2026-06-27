@@ -23,21 +23,14 @@ fn disc(bytes: &[u8]) -> IxPred {
         bytes: Bytes(bytes.to_vec()),
     }
 }
-fn rule(predicate: Pred) -> Rule {
-    Rule::from_row("r".into(), true, OnUnknown::Skip, 1, predicate).unwrap()
+fn rule(id: i64, predicate: Pred) -> Rule {
+    Rule::from_row(id, format!("r{id}"), true, OnUnknown::Skip, 1, predicate).unwrap()
 }
-fn rule_ou(ou: OnUnknown, predicate: Pred) -> Rule {
-    Rule::from_row("r".into(), true, ou, 1, predicate).unwrap()
+fn rule_ou(id: i64, ou: OnUnknown, predicate: Pred) -> Rule {
+    Rule::from_row(id, format!("r{id}"), true, ou, 1, predicate).unwrap()
 }
 fn fee_ge(n: u64) -> Pred {
     Pred::PriorityFeeLamports { op: Cmp::Ge, n }
-}
-fn matched_index(r: MatchResult) -> Option<usize> {
-    match r {
-        MatchResult::Matched(i) => Some(i),
-        MatchResult::NoMatch => None,
-        MatchResult::Deferred => panic!("unexpected Deferred"),
-    }
 }
 
 // Macro: build a view from bytes and run a closure with its ViewFacts. (The view borrows `bytes`,
@@ -160,12 +153,12 @@ fn t3_tri_unresolved() {
 
 // ---- T4: first-match-exclusive routing via priority + stop_after_match ----
 
-// Priority is Vec order: index 0 = immediate, 1 = auction, 2 = standard.
+// Priority is Vec order; the first matching rule's id is returned.
 fn fee_router() -> Vec<Rule> {
     vec![
-        rule(fee_ge(1_000_000_000)), // immediate
-        rule(fee_ge(500_000_000)),   // auction
-        rule(fee_ge(1)),             // standard
+        rule(10, fee_ge(1_000_000_000)), // immediate
+        rule(11, fee_ge(500_000_000)),   // auction
+        rule(12, fee_ge(1)),             // standard
     ]
 }
 
@@ -175,12 +168,12 @@ fn t4_first_match() {
     let winner = |fee: u64| {
         let bytes = fee_tx_bytes(fee);
         let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
-        matched_index(rules.match_view(&view, None))
+        rules.match_view(&view, None)
     };
-    assert_eq!(winner(2_000_000_000), Some(0)); // immediate
-    assert_eq!(winner(500_000_000), Some(1)); // auction
-    assert_eq!(winner(1), Some(2)); // standard
-    assert_eq!(winner(0), None);
+    assert_eq!(winner(2_000_000_000), MatchResult::Matched(10)); // immediate
+    assert_eq!(winner(500_000_000), MatchResult::Matched(11)); // auction
+    assert_eq!(winner(1), MatchResult::Matched(12)); // standard
+    assert_eq!(winner(0), MatchResult::NoMatch);
 }
 
 // ---- T5: Unknown predicate + on_unknown policy ----
@@ -189,9 +182,9 @@ fn t4_first_match() {
 fn t5_unknown_policy() {
     let b = wpk(2);
     facts!(unresolved_alt_bytes(), None, f => {
-        let skip = rule(Pred::AccountContains(b));
+        let skip = rule(1, Pred::AccountContains(b));
         assert!(!eval_rule(&skip, &f));
-        let treat_true = rule_ou(OnUnknown::TreatTrue, Pred::AccountContains(b));
+        let treat_true = rule_ou(1, OnUnknown::TreatTrue, Pred::AccountContains(b));
         assert!(eval_rule(&treat_true, &f));
     });
 }
@@ -202,16 +195,16 @@ fn t5_unknown_policy() {
 fn t6_index_soundness() {
     let p_a = pk(10);
     let p_b = pk(11);
-    // Vec order: [0] = P_b rule, [1] = P_a rule, [2] = always.
-    let r_pb = rule(Pred::AnyInstruction(Box::new(IxPred::And(vec![
+    // Vec order: [0] = P_b rule (id 100), [1] = P_a rule (id 101), [2] = always (id 1).
+    let r_pb = rule(100, Pred::AnyInstruction(Box::new(IxPred::And(vec![
         IxPred::ProgramIdIs(Pk(p_b)),
         disc(&Z8),
     ]))));
-    let r_pa = rule(Pred::AnyInstruction(Box::new(IxPred::And(vec![
+    let r_pa = rule(101, Pred::AnyInstruction(Box::new(IxPred::And(vec![
         IxPred::ProgramIdIs(Pk(p_a)),
         disc(&Z8),
     ]))));
-    let always = rule(fee_ge(1));
+    let always = rule(1, fee_ge(1));
     let rules = vec![r_pb, r_pa, always];
     let idx = CandidateIndex::build(&rules);
 
@@ -234,8 +227,8 @@ fn t6_index_soundness() {
     assert!(!cands.contains(&1), "P_a rule must NOT be a candidate");
 
     let rs = RuleSet::new(rules);
-    assert_eq!(matched_index(rs.match_view(&view, None)), Some(0));
-    assert_eq!(rs.match_view_scan(&view, None), Some(0));
+    assert_eq!(rs.match_view(&view, None), MatchResult::Matched(100));
+    assert_eq!(rs.match_view_scan(&view, None), MatchResult::Matched(100));
 }
 
 // ---- T7: defer on partial ALT ----
@@ -273,18 +266,20 @@ fn schema_version_gating() {
     use transaction_predicate_matcher::{load_rules, LoadError, RawRule, ENGINE_SCHEMA_VERSION};
 
     let body = serde_json::json!({ "uses_alt": true });
-    let mk = |ver: u32| RawRule {
-        name: "r".into(),
+    let mk = |id: i64, ver: u32| RawRule {
+        id,
+        name: format!("r{id}"),
         enabled: true,
         on_unknown: OnUnknown::Skip,
         schema_version: ver,
         predicate: body.clone(),
     };
 
-    // index 0 is from the future (skipped), index 1 is current (loads).
-    let (ok, errs) = load_rules(vec![mk(ENGINE_SCHEMA_VERSION + 1), mk(ENGINE_SCHEMA_VERSION)]);
+    // rule 1 is from the future (skipped), rule 2 is current (loads).
+    let (ok, errs) = load_rules(vec![mk(1, ENGINE_SCHEMA_VERSION + 1), mk(2, ENGINE_SCHEMA_VERSION)]);
     assert_eq!(ok.len(), 1);
-    assert!(matches!(errs[0], (0, LoadError::UnsupportedSchemaVersion { .. })));
+    assert_eq!(ok[0].id, 2);
+    assert!(matches!(errs[0], (1, LoadError::UnsupportedSchemaVersion { .. })));
 }
 
 // ---- index == brute force over assorted facts ----
@@ -295,14 +290,14 @@ fn index_equals_bruteforce() {
     let p_b = pk(11);
     let dest = pk(50);
 
-    // Vec order: [0] P_b rule, [1] account=dest rule, [2] always (fee).
+    // Vec order: [0] P_b rule (100), [1] account=dest rule (101), [2] always/fee (1).
     let rules = vec![
-        rule(Pred::AnyInstruction(Box::new(IxPred::And(vec![
+        rule(100, Pred::AnyInstruction(Box::new(IxPred::And(vec![
             IxPred::ProgramIdIs(Pk(p_b)),
             disc(&Z8),
         ])))),
-        rule(Pred::AccountContains(Pk(dest))),
-        rule(fee_ge(1)),
+        rule(101, Pred::AccountContains(Pk(dest))),
+        rule(1, fee_ge(1)),
     ];
     let rs = RuleSet::new(rules);
 
@@ -316,12 +311,12 @@ fn index_equals_bruteforce() {
     for (i, bytes) in cases.iter().enumerate() {
         let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
         assert_eq!(
-            matched_index(rs.match_view(&view, None)),
+            rs.match_view(&view, None),
             rs.match_view_scan(&view, None),
             "case {i}"
         );
     }
-    // dest case must hit the account rule (index 1).
+    // dest case must hit the account rule (id 101).
     let view = SanitizedTransactionView::try_new_sanitized(cases[2].as_slice()).unwrap();
-    assert_eq!(matched_index(rs.match_view(&view, None)), Some(1));
+    assert_eq!(rs.match_view(&view, None), MatchResult::Matched(101));
 }

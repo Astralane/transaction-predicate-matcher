@@ -3,24 +3,27 @@
 This document defines the JSON(B) schema for a rule's `predicate` in
 `transaction-predicate-matcher`, schema version **1** (`ENGINE_SCHEMA_VERSION = 1`).
 
-A rule is **matching logic only** — it carries no decision/action. When the predicate matches a
-transaction, the engine reports the rule's `id`; the consumer maps that id to an action.
+A rule is **matching logic only** — it carries no decision/action and no priority number. Rules are
+matched in list order and the **first match wins**; the matcher reports that rule's `id`. The
+consumer maps the id to an action.
 
 ## Storage model
 
 A rule is a row; only the `predicate` column is the JSON described here. Everything else is rule
-metadata read independently of (and before) parsing the predicate:
+metadata read independently of (and before) parsing the predicate. **Row order is priority** — load
+rows in the order you want them tried (the first row is tried first).
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `i64` | reported on match; you map it → action |
 | `name` | `text` | human label |
-| `enabled` | `bool` | disabled rules are not compiled |
-| `priority` | `i32` | evaluation order, **descending**; ties broken by `id` ascending |
+| `enabled` | `bool` | disabled rules are skipped |
 | `on_unknown` | `text` | `skip` (default) \| `fail_closed` \| `treat_true` — see [Tri-state](#tri-state-and-on_unknown) |
-| `stop_after_match` | `bool` | if this rule matches, stop evaluating lower-priority rules (first-match-exclusive routing) |
 | `schema_version` | `u32` | the schema version this predicate targets; rules with `schema_version > ENGINE_SCHEMA_VERSION` are skipped at load |
 | `predicate` | `jsonb` | a [`Pred`](#transaction-scope--pred) value |
+
+(Use an ordering column of your own — e.g. a `position` or `seq` — to control the load order; the
+matcher itself just takes an ordered `Vec`.)
 
 Loading is **fail-closed**: a malformed predicate, a value/kind mismatch, an unknown atom, or a
 `schema_version` newer than the engine supports rejects *that* rule (logged & skipped). It never
