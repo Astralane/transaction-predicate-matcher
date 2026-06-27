@@ -5,7 +5,7 @@ use solana_pubkey::Pubkey;
 use transaction_predicate_matcher::{OnUnknown, Rule};
 
 fn load(predicate: serde_json::Value) -> Rule {
-    Rule::load_from_json("example".into(), true, OnUnknown::Skip, 1, &predicate)
+    Rule::load_from_json(1, "example".into(), true, OnUnknown::Skip, 1, &predicate)
         .expect("example predicate must load")
 }
 
