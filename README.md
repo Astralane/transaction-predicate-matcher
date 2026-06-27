@@ -1,6 +1,6 @@
 # transaction-predicate-matcher
 
-Match rules against pending Solana transactions.
+Match rules against Solana transactions.
 
 You write rules as JSON. The matcher loads them once, then tells you which rules a transaction
 matches by returning their ids. What to do with a match is up to you.
