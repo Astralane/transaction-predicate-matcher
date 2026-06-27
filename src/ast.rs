@@ -90,19 +90,15 @@ pub enum OnUnknown {
 pub const ENGINE_SCHEMA_VERSION: u32 = 1;
 
 /// A single matching rule. The `predicate` is the only thing authored in JSON; everything else is
-/// rule metadata. When the predicate matches a transaction, the engine reports this rule's `id` —
-/// the action it triggers is resolved by the consumer, not encoded here.
+/// rule metadata. Rules have no id or priority: their position in the [`crate::RuleSet`]'s `Vec`
+/// is their priority (index 0 is highest), and a match is reported by that index — the action it
+/// triggers is resolved by the consumer, not encoded here.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Rule {
-    pub id: i64,
     pub name: String,
     pub enabled: bool,
-    pub priority: i32,
     pub on_unknown: OnUnknown,
-    /// When true, a match by this rule stops evaluation of all lower-priority rules — the way to
-    /// express first-match-exclusive routing across a set of rules.
-    pub stop_after_match: bool,
     /// Schema version this rule was authored against. The engine accepts rules with
     /// `schema_version <= ENGINE_SCHEMA_VERSION` and rejects newer ones.
     pub schema_version: u32,
@@ -113,26 +109,19 @@ impl Rule {
     /// Assemble a `Rule` from an already-deserialized `Pred`. Rejects the rule if it targets a
     /// newer schema version than this engine supports, then runs `validate` (rejecting on the
     /// first failure).
-    #[allow(clippy::too_many_arguments)]
     pub fn from_row(
-        id: i64,
         name: String,
         enabled: bool,
-        priority: i32,
         on_unknown: OnUnknown,
-        stop_after_match: bool,
         schema_version: u32,
         predicate: Pred,
     ) -> Result<Rule, LoadError> {
         check_schema_version(schema_version)?;
         validate(&predicate)?;
         Ok(Rule {
-            id,
             name,
             enabled,
-            priority,
             on_unknown,
-            stop_after_match,
             schema_version,
             predicate,
         })
@@ -140,29 +129,16 @@ impl Rule {
 
     /// Versioned load path for persisted rules: gate on `schema_version` *before* parsing, so an
     /// older engine never trips over keywords it doesn't know — it skips the future rule cleanly.
-    #[allow(clippy::too_many_arguments)]
     pub fn load_from_json(
-        id: i64,
         name: String,
         enabled: bool,
-        priority: i32,
         on_unknown: OnUnknown,
-        stop_after_match: bool,
         schema_version: u32,
         predicate_json: &serde_json::Value,
     ) -> Result<Rule, LoadError> {
         check_schema_version(schema_version)?;
         let predicate: Pred = serde_json::from_value(predicate_json.clone())?;
-        Self::from_row(
-            id,
-            name,
-            enabled,
-            priority,
-            on_unknown,
-            stop_after_match,
-            schema_version,
-            predicate,
-        )
+        Self::from_row(name, enabled, on_unknown, schema_version, predicate)
     }
 }
 
@@ -177,35 +153,26 @@ fn check_schema_version(schema_version: u32) -> Result<(), LoadError> {
 }
 
 /// A raw rule row, as read from storage (the `predicate` column is still un-parsed JSON).
+/// Order matters: the position in the input `Vec` is the rule's priority.
 pub struct RawRule {
-    pub id: i64,
     pub name: String,
     pub enabled: bool,
-    pub priority: i32,
     pub on_unknown: OnUnknown,
-    pub stop_after_match: bool,
     pub schema_version: u32,
     pub predicate: serde_json::Value,
 }
 
 /// Load a batch of raw rules, isolating failures: returns the rules that loaded plus the
-/// `(id, error)` pairs for those that didn't. One bad or too-new rule never poisons the set.
-pub fn load_rules(raw: Vec<RawRule>) -> (Vec<Rule>, Vec<(i64, LoadError)>) {
+/// `(input_index, error)` pairs for those that didn't. One bad or too-new rule never poisons the
+/// set. Note that skipped rules shift the indices of later ones, so the returned `Vec`'s positions
+/// (not the raw input positions) are what [`crate::RuleSet`] reports on a match.
+pub fn load_rules(raw: Vec<RawRule>) -> (Vec<Rule>, Vec<(usize, LoadError)>) {
     let mut ok = Vec::new();
     let mut errs = Vec::new();
-    for r in raw {
-        match Rule::load_from_json(
-            r.id,
-            r.name,
-            r.enabled,
-            r.priority,
-            r.on_unknown,
-            r.stop_after_match,
-            r.schema_version,
-            &r.predicate,
-        ) {
+    for (i, r) in raw.into_iter().enumerate() {
+        match Rule::load_from_json(r.name, r.enabled, r.on_unknown, r.schema_version, &r.predicate) {
             Ok(rule) => ok.push(rule),
-            Err(e) => errs.push((r.id, e)),
+            Err(e) => errs.push((i, e)),
         }
     }
     (ok, errs)

@@ -140,21 +140,22 @@ pub fn rule_triggers(rule: &Rule) -> Trig {
     triggers(&rule.predicate)
 }
 
+/// Inverted index over rule **positions** (index in the rule `Vec`).
 pub struct CandidateIndex {
-    map: HashMap<TrigKey, Vec<i64>>,
-    always: Vec<i64>,
+    map: HashMap<TrigKey, Vec<usize>>,
+    always: Vec<usize>,
 }
 
 impl CandidateIndex {
     pub fn build(rules: &[Rule]) -> Self {
-        let mut map: HashMap<TrigKey, Vec<i64>> = HashMap::new();
+        let mut map: HashMap<TrigKey, Vec<usize>> = HashMap::new();
         let mut always = Vec::new();
-        for r in rules.iter().filter(|r| r.enabled) {
+        for (i, r) in rules.iter().enumerate().filter(|(_, r)| r.enabled) {
             match rule_triggers(r) {
-                Trig::Always => always.push(r.id),
+                Trig::Always => always.push(i),
                 Trig::Keys(keys) => {
                     for k in keys {
-                        map.entry(k).or_default().push(r.id);
+                        map.entry(k).or_default().push(i);
                     }
                 }
             }
@@ -162,9 +163,9 @@ impl CandidateIndex {
         Self { map, always }
     }
 
-    /// Candidate rule ids for a tx (Full-ALT path).
-    pub fn candidates<D: TransactionData>(&self, tx: &ViewFacts<D>) -> HashSet<i64> {
-        let mut out: HashSet<i64> = self.always.iter().copied().collect();
+    /// Candidate rule positions for a tx (Full-ALT path).
+    pub fn candidates<D: TransactionData>(&self, tx: &ViewFacts<D>) -> HashSet<usize> {
+        let mut out: HashSet<usize> = self.always.iter().copied().collect();
         for key in present_keys(tx) {
             if let Some(ids) = self.map.get(&key) {
                 out.extend(ids);

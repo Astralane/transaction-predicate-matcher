@@ -19,7 +19,7 @@ pub mod value;
 pub use ast::{load_rules, IxPred, OnUnknown, Pred, RawRule, Rule, ENGINE_SCHEMA_VERSION};
 pub use engine::{Compiled, MatchResult, RuleSet};
 pub use error::{EngineError, LoadError};
-pub use eval::{eval_ix, eval_pred, eval_rule, eval_slice, RuleOutput};
+pub use eval::{eval_ix, eval_pred, eval_rule, eval_slice};
 pub use facts::{AccountLookupTableCache, IxView, MaybeKey, ViewFacts};
 pub use index::{CandidateIndex, Trig, TrigKey};
 pub use tri::Tri;

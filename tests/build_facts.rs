@@ -104,14 +104,17 @@ fn v0_alt_resolved_vs_unresolved() {
 
     // match_view: defers without the cache, matches with it.
     let rule = Rule::from_row(
-        1, "w".into(), true, 0, OnUnknown::Skip, false, 1,
+        "w".into(),
+        true,
+        OnUnknown::Skip,
+        1,
         Pred::WritableAccountContains(Pk(writable_acct)),
     )
     .unwrap();
-    let engine = RuleSet::new(vec![rule]);
-    assert!(matches!(engine.match_view(&view, None), MatchResult::Deferred));
-    match engine.match_view(&view, Some(&cache)) {
-        MatchResult::Matched(ids) => assert_eq!(ids, vec![1]),
-        MatchResult::Deferred => panic!("should not defer with full cache"),
+    let rs = RuleSet::new(vec![rule]);
+    assert!(matches!(rs.match_view(&view, None), MatchResult::Deferred));
+    match rs.match_view(&view, Some(&cache)) {
+        MatchResult::Matched(i) => assert_eq!(i, 0),
+        _ => panic!("should match the only rule with full cache"),
     }
 }

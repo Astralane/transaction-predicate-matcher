@@ -189,18 +189,9 @@ pub fn eval_ix<D: TransactionData>(p: &IxPred, ix: &IxView<'_, '_, D>) -> Tri {
 
 // ---- rule -> match ----
 
-/// Result of evaluating one rule against one tx.
-pub struct RuleOutput {
-    pub matched: bool,
-    pub stop: bool,
-}
-
-pub fn eval_rule<D: TransactionData>(rule: &Rule, tx: &ViewFacts<D>) -> RuleOutput {
-    let matched = matches!(resolve(eval_pred(&rule.predicate, tx), rule.on_unknown), Some(true));
-    RuleOutput {
-        matched,
-        stop: matched && rule.stop_after_match,
-    }
+/// Does this rule match the transaction (after applying its `on_unknown` policy)?
+pub fn eval_rule<D: TransactionData>(rule: &Rule, tx: &ViewFacts<D>) -> bool {
+    matches!(resolve(eval_pred(&rule.predicate, tx), rule.on_unknown), Some(true))
 }
 
 fn resolve(t: Tri, policy: OnUnknown) -> Option<bool> {

@@ -2,8 +2,10 @@
 
 Match rules against Solana transactions.
 
-You write rules as JSON. The matcher loads them once, then tells you which rules a transaction
-matches by returning their ids. What to do with a match is up to you.
+You write rules as an ordered list, predicates as JSON. The matcher loads them once, then tells you
+which rule a transaction matches by returning its position in the list. Rules are tried top to
+bottom and the first match wins, so put higher-priority rules first. What to do with a match is up
+to you.
 
 Pending transactions often reference accounts behind Address Lookup Tables you haven't resolved
 yet. Rather than guess and risk a wrong `false`, the matcher answers `True`, `False`, or `Unknown`,
@@ -12,9 +14,10 @@ guess.
 
 ## Rules are matching logic, not actions
 
-A rule is a predicate plus some metadata (id, priority, enabled). It describes what to match and
-nothing else. When it matches you get its id back, and you keep the id-to-action mapping on your
-side. Change what a match does without touching the rules.
+A rule is a predicate plus a little metadata (name, enabled). It describes what to match and
+nothing else — no id, no priority number. Order is priority: the rule's position in the list. When
+it matches you get that index back, and you keep an action list parallel to the rules. Change what
+a match does without touching the rules.
 
 Predicates are built from small atoms: signer and fee-payer checks, account membership,
 instruction shape (program id, discriminator, data slices), fees. There's no `transfer_to_X` atom;
@@ -22,8 +25,8 @@ compose one from `program_id_is` + `discriminator` + `account_at`. Atoms come in
 whole-transaction and single-instruction, so "program X and instruction Y" always means the same
 instruction.
 
-For first-match routing (what a "switch" used to do), give rules descending `priority` and set
-`stop_after_match`. The first match wins and evaluation stops.
+First-match routing (what a "switch" used to do) is just ordering: list the rules from most to
+least specific and the matcher returns the first that matches.
 
 ## Quick look
 
@@ -39,23 +42,22 @@ Loading and running it:
 use transaction_predicate_matcher::{AccountLookupTableCache, RuleSet, MatchResult, OnUnknown, Rule};
 
 let rule = Rule::load_from_json(
-    7,                       // id  (you map this id -> action)
     "high-priority".into(),  // name
     true,                    // enabled
-    0,                       // priority
     OnUnknown::Skip,         // what to do on an Unknown result
-    false,                   // stop_after_match
     1,                       // schema_version
     &predicate_json,
 )?;
 
-let engine = RuleSet::new(vec![rule]);
+// Order = priority. Index 0 is tried first.
+let rules = RuleSet::new(vec![rule]);
 
 // `view` is a SanitizedTransactionView; `cache` resolves any Address Lookup Tables it uses.
 let cache = AccountLookupTableCache::new().with_table(table_pubkey, addresses);
-match engine.match_view(&view, Some(&cache)) {
-    MatchResult::Matched(ids) => for id in ids { /* look up the action for `id` */ },
-    MatchResult::Deferred     => { /* a table wasn't in the cache, resolve and retry */ }
+match rules.match_view(&view, Some(&cache)) {
+    MatchResult::Matched(i) => { /* rule at index `i` matched; look up its action */ }
+    MatchResult::NoMatch    => { /* nothing matched */ }
+    MatchResult::Deferred   => { /* a table wasn't in the cache, resolve and retry */ }
 }
 ```
 
@@ -132,9 +134,9 @@ atoms stays backwards-compatible for code that depends on this crate.
 
 ## Not included
 
-Networking, RPC, fetching lookup tables, storing rules, mapping ids to actions, anything spanning
-multiple transactions ("5 txs in 100ms"), or ML. Feed those in as facts and map matched ids to
-actions yourself.
+Networking, RPC, fetching lookup tables, storing rules, mapping match indices to actions, anything
+spanning multiple transactions ("5 txs in 100ms"), or ML. Feed those in as facts and map the
+matched index to an action yourself.
 
 ## Build & test
 
