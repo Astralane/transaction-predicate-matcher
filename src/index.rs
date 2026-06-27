@@ -1,0 +1,216 @@
+//! Candidate index: an inverted index over "necessary atoms" to avoid scanning every rule.
+
+use crate::{ast::*, facts::*};
+use std::collections::{HashMap, HashSet};
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Kind {
+    Signer,
+    FeePayer,
+    Program,
+    ProgramDisc,
+    Account,
+    Always,
+}
+
+/// Hashable trigger key: kind + raw bytes.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct TrigKey {
+    pub kind: Kind,
+    pub bytes: Vec<u8>,
+}
+
+pub fn always_key() -> TrigKey {
+    TrigKey {
+        kind: Kind::Always,
+        bytes: vec![],
+    }
+}
+
+pub enum Trig {
+    Keys(Vec<TrigKey>),
+    Always,
+}
+
+fn one(kind: Kind, bytes: &[u8]) -> Trig {
+    Trig::Keys(vec![TrigKey {
+        kind,
+        bytes: bytes.to_vec(),
+    }])
+}
+
+/// Higher = more selective. ProgramDisc > Account/Signer/FeePayer > Program.
+fn selectivity_rank(keys: &[TrigKey]) -> u8 {
+    keys.iter()
+        .map(|k| match k.kind {
+            Kind::ProgramDisc => 4,
+            Kind::Account => 3,
+            Kind::Signer | Kind::FeePayer => 3,
+            Kind::Program => 1,
+            Kind::Always => 0,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// AND: any ONE true conjunct suffices -> pick the most selective child's keys.
+fn most_selective<I: Iterator<Item = Trig>>(it: I) -> Trig {
+    let mut best: Option<Vec<TrigKey>> = None;
+    for t in it {
+        match t {
+            Trig::Always => {}
+            Trig::Keys(k) => {
+                let rank = selectivity_rank(&k);
+                let better = best.as_ref().is_none_or(|b| rank > selectivity_rank(b));
+                if better {
+                    best = Some(k);
+                }
+            }
+        }
+    }
+    best.map_or(Trig::Always, Trig::Keys)
+}
+
+/// OR: must keep EVERY branch's keys (any branch could be the true one); Always if any branch is.
+fn union_or_always<I: Iterator<Item = Trig>>(it: I) -> Trig {
+    let mut acc = Vec::new();
+    for t in it {
+        match t {
+            Trig::Always => return Trig::Always,
+            Trig::Keys(mut k) => acc.append(&mut k),
+        }
+    }
+    if acc.is_empty() {
+        Trig::Always
+    } else {
+        Trig::Keys(acc)
+    }
+}
+
+pub fn triggers(p: &Pred) -> Trig {
+    use Pred::*;
+    match p {
+        SignerContains(pk) => one(Kind::Signer, pk.0.as_ref()),
+        FeePayerIs(pk) => one(Kind::FeePayer, pk.0.as_ref()),
+        AccountContains(pk) | WritableAccountContains(pk) | ReadonlyAccountContains(pk) => {
+            one(Kind::Account, pk.0.as_ref())
+        }
+        AnyInstruction(ix) | InstructionAt { pred: ix, .. } => ix_triggers(ix),
+        And(v) => most_selective(v.iter().map(triggers)),
+        Or(v) => union_or_always(v.iter().map(triggers)),
+        _ => Trig::Always,
+    }
+}
+
+pub fn ix_triggers(p: &IxPred) -> Trig {
+    use IxPred::*;
+    match p {
+        ProgramIdIs(pk) => one(Kind::Program, pk.0.as_ref()),
+        IxAccountContains(pk) => one(Kind::Account, pk.0.as_ref()),
+        AccountAt { pk, .. } => one(Kind::Account, pk.0.as_ref()),
+        And(v) => {
+            let prog = v.iter().find_map(|c| {
+                if let ProgramIdIs(p) = c {
+                    Some(p.0)
+                } else {
+                    None
+                }
+            });
+            let d0 = v.iter().find_map(|c| match c {
+                Discriminator { offset: 0, bytes } => Some(bytes.0.clone()),
+                _ => None,
+            });
+            match (prog, d0) {
+                (Some(p), Some(d)) => {
+                    let mut key = p.as_ref().to_vec();
+                    key.extend_from_slice(&d);
+                    one(Kind::ProgramDisc, &key)
+                }
+                (Some(p), None) => one(Kind::Program, p.as_ref()),
+                _ => most_selective(v.iter().map(ix_triggers)),
+            }
+        }
+        Or(v) => union_or_always(v.iter().map(ix_triggers)),
+        _ => Trig::Always,
+    }
+}
+
+pub fn rule_triggers(rule: &Rule) -> Trig {
+    triggers(&rule.predicate)
+}
+
+pub struct CandidateIndex {
+    map: HashMap<TrigKey, Vec<i64>>,
+    always: Vec<i64>,
+}
+
+impl CandidateIndex {
+    pub fn build(rules: &[Rule]) -> Self {
+        let mut map: HashMap<TrigKey, Vec<i64>> = HashMap::new();
+        let mut always = Vec::new();
+        for r in rules.iter().filter(|r| r.enabled) {
+            match rule_triggers(r) {
+                Trig::Always => always.push(r.id),
+                Trig::Keys(keys) => {
+                    for k in keys {
+                        map.entry(k).or_default().push(r.id);
+                    }
+                }
+            }
+        }
+        Self { map, always }
+    }
+
+    /// Candidate rule ids for a tx (Full-ALT path).
+    pub fn candidates(&self, tx: &TxFacts) -> HashSet<i64> {
+        let mut out: HashSet<i64> = self.always.iter().copied().collect();
+        for key in present_keys(tx) {
+            if let Some(ids) = self.map.get(&key) {
+                out.extend(ids);
+            }
+        }
+        out
+    }
+}
+
+/// All trigger keys the tx exhibits. Skips Unresolved keys (cannot probe an unknown key).
+pub fn present_keys(tx: &TxFacts) -> Vec<TrigKey> {
+    let mut v = Vec::new();
+    for s in &tx.signers {
+        v.push(TrigKey {
+            kind: Kind::Signer,
+            bytes: s.as_ref().to_vec(),
+        });
+    }
+    v.push(TrigKey {
+        kind: Kind::FeePayer,
+        bytes: tx.fee_payer.as_ref().to_vec(),
+    });
+    for k in &tx.account_keys {
+        if let MaybeKey::Known(p) = k {
+            v.push(TrigKey {
+                kind: Kind::Account,
+                bytes: p.as_ref().to_vec(),
+            });
+        }
+    }
+    for ix in &tx.instructions {
+        if let MaybeKey::Known(prog) = ix.program_id {
+            v.push(TrigKey {
+                kind: Kind::Program,
+                bytes: prog.as_ref().to_vec(),
+            });
+            for n in [8usize, 4, 1] {
+                if ix.data.len() >= n {
+                    let mut k = prog.as_ref().to_vec();
+                    k.extend_from_slice(&ix.data[..n]);
+                    v.push(TrigKey {
+                        kind: Kind::ProgramDisc,
+                        bytes: k,
+                    });
+                }
+            }
+        }
+    }
+    v
+}

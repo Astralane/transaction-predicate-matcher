@@ -1,0 +1,21 @@
+[package]
+name = "transaction-predicate-matcher"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+build-facts = ["dep:solana-message", "dep:solana-transaction"]
+
+[dependencies]
+serde         = { version = "1", features = ["derive"] }
+serde_json    = "1"
+hex           = "0.4"
+solana-pubkey = "2"
+arc-swap      = "1"
+thiserror     = "1"
+solana-message     = { version = "2", optional = true }
+solana-transaction = { version = "2", optional = true }
+
+[dev-dependencies]
+serde_json = "1"
