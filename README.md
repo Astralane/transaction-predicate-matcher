@@ -1,6 +1,6 @@
 # transaction-predicate-matcher
 
-Match rules against **pending** (not-yet-landed) Solana transactions.
+Match rules against **pending** Solana transactions.
 
 You write rules as JSON, the engine loads and checks them once, then tells you which rules a
 transaction matches. It's a pure function: no network, no clocks, no randomness. You hand it the
