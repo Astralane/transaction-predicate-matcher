@@ -1,6 +1,7 @@
 //! Candidate index: an inverted index over "necessary atoms" to avoid scanning every rule.
 
 use crate::{ast::*, facts::*};
+use agave_transaction_view::transaction_data::TransactionData;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -162,7 +163,7 @@ impl CandidateIndex {
     }
 
     /// Candidate rule ids for a tx (Full-ALT path).
-    pub fn candidates(&self, tx: &TxFacts) -> HashSet<i64> {
+    pub fn candidates<D: TransactionData>(&self, tx: &ViewFacts<D>) -> HashSet<i64> {
         let mut out: HashSet<i64> = self.always.iter().copied().collect();
         for key in present_keys(tx) {
             if let Some(ids) = self.map.get(&key) {
@@ -174,36 +175,42 @@ impl CandidateIndex {
 }
 
 /// All trigger keys the tx exhibits. Skips Unresolved keys (cannot probe an unknown key).
-pub fn present_keys(tx: &TxFacts) -> Vec<TrigKey> {
+pub fn present_keys<D: TransactionData>(tx: &ViewFacts<D>) -> Vec<TrigKey> {
     let mut v = Vec::new();
-    for s in &tx.signers {
+    for i in 0..tx.num_signers() {
+        if let MaybeKey::Known(p) = tx.account(i) {
+            v.push(TrigKey {
+                kind: Kind::Signer,
+                bytes: p.as_ref().to_vec(),
+            });
+        }
+    }
+    if let MaybeKey::Known(p) = tx.account(0) {
         v.push(TrigKey {
-            kind: Kind::Signer,
-            bytes: s.as_ref().to_vec(),
+            kind: Kind::FeePayer,
+            bytes: p.as_ref().to_vec(),
         });
     }
-    v.push(TrigKey {
-        kind: Kind::FeePayer,
-        bytes: tx.fee_payer.as_ref().to_vec(),
-    });
-    for k in &tx.account_keys {
-        if let MaybeKey::Known(p) = k {
+    for i in 0..tx.num_accounts() {
+        if let MaybeKey::Known(p) = tx.account(i) {
             v.push(TrigKey {
                 kind: Kind::Account,
                 bytes: p.as_ref().to_vec(),
             });
         }
     }
-    for ix in &tx.instructions {
-        if let MaybeKey::Known(prog) = ix.program_id {
+    for j in 0..tx.num_instructions() {
+        let Some(ix) = tx.instruction(j) else { continue };
+        if let MaybeKey::Known(prog) = ix.program_id() {
             v.push(TrigKey {
                 kind: Kind::Program,
                 bytes: prog.as_ref().to_vec(),
             });
+            let data = ix.data();
             for n in [8usize, 4, 1] {
-                if ix.data.len() >= n {
+                if data.len() >= n {
                     let mut k = prog.as_ref().to_vec();
-                    k.extend_from_slice(&ix.data[..n]);
+                    k.extend_from_slice(&data[..n]);
                     v.push(TrigKey {
                         kind: Kind::ProgramDisc,
                         bytes: k,

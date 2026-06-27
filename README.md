@@ -36,7 +36,7 @@ A rule that flags high-priority-fee transactions:
 Loading and running it:
 
 ```rust
-use transaction_predicate_matcher::{Engine, MatchResult, Rule, OnUnknown};
+use transaction_predicate_matcher::{AccountLookupTableCache, RuleSet, MatchResult, OnUnknown, Rule};
 
 let rule = Rule::load_from_json(
     7,                       // id  (you map this id -> action)
@@ -49,29 +49,19 @@ let rule = Rule::load_from_json(
     &predicate_json,
 )?;
 
-let engine = Engine::new(vec![rule]);
+let engine = RuleSet::new(vec![rule]);
 
-match engine.match_tx(&facts) {
-    MatchResult::Matched(ids) => for id in ids { /* look up the action for `id` */ },
-    MatchResult::Deferred     => { /* lookup tables unresolved, resolve and retry */ }
-}
-```
-
-`facts` is a `TxFacts`. Build it yourself, or turn on the `build-facts` feature and work straight
-from a `SanitizedTransactionView` plus an optional lookup-table cache:
-
-```rust
-use transaction_predicate_matcher::{AccountLookupTableCache, MatchResult};
-
+// `view` is a SanitizedTransactionView; `cache` resolves any Address Lookup Tables it uses.
 let cache = AccountLookupTableCache::new().with_table(table_pubkey, addresses);
 match engine.match_view(&view, Some(&cache)) {
-    MatchResult::Matched(ids) => { /* ... */ }
+    MatchResult::Matched(ids) => for id in ids { /* look up the action for `id` */ },
     MatchResult::Deferred     => { /* a table wasn't in the cache, resolve and retry */ }
 }
 ```
 
-Pass `None` (or a cache missing some tables) and any ALT-loaded accounts stay unresolved, so
-`match_view` returns `Deferred` rather than guess.
+The matcher evaluates straight off the view — no per-transaction allocation. Pass `None` (or a
+cache missing some tables) and any ALT-loaded accounts stay unresolved, so `match_view` returns
+`Deferred` rather than guess.
 
 ## Example rules
 
@@ -127,8 +117,8 @@ amount. Only top-level transfers are visible before a transaction lands; CPI tra
 ## Good to know
 
 - An inverted index narrows candidates so you don't evaluate every rule on every transaction.
-- If a transaction has unresolved lookup tables, `match_tx` returns `Deferred`. Resolve and retry,
-  or use `match_tx_scan` to evaluate anyway.
+- If a transaction has unresolved lookup tables, `match_view` returns `Deferred`. Resolve and retry,
+  or use `match_view_scan` to evaluate anyway.
 - Bad rules are rejected at load (bad base58/hex, type mismatches, unknown atoms), not silently
   treated as `false`. `load_rules` skips the bad ones and keeps the rest.
 - Rule sets hot-reload at runtime.
@@ -149,6 +139,5 @@ actions yourself.
 ## Build & test
 
 ```bash
-cargo test                        # core
-cargo test --features build-facts # core + transaction -> facts builder
+cargo test
 ```

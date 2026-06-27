@@ -1,83 +1,117 @@
-//! §10 fact-builder tests (feature `build-facts`): canonical ordering + ComputeBudget fee math.
-#![cfg(feature = "build-facts")]
+//! ViewFacts construction: canonical account ordering, writability, ComputeBudget fee math, and
+//! ALT resolution (resolved vs unresolved) including the RuleSet::match_view path.
 
-use solana_message::compiled_instruction::CompiledInstruction;
-use solana_message::{Message as LegacyMessage, MessageHeader, VersionedMessage};
-use solana_pubkey::Pubkey;
-use solana_transaction::versioned::VersionedTransaction;
-use transaction_predicate_matcher::build::{AltResolver, FactBuilder};
-use transaction_predicate_matcher::facts::MaybeKey;
-use transaction_predicate_matcher::value::TxVer;
+mod common;
 
-struct NoAlts;
-impl AltResolver for NoAlts {
-    fn addresses(&self, _: &Pubkey) -> Option<Vec<Pubkey>> {
-        None
-    }
-}
-
-fn pk(n: u8) -> Pubkey {
-    Pubkey::new_from_array([n; 32])
-}
+use agave_transaction_view::transaction_view::SanitizedTransactionView;
+use common::*;
+use solana_message::v0::MessageAddressTableLookup;
+use transaction_predicate_matcher::value::{Pk, TxVer};
+use transaction_predicate_matcher::{
+    AccountLookupTableCache, RuleSet, MatchResult, MaybeKey, OnUnknown, Pred, Rule, ViewFacts,
+};
 
 #[test]
 fn legacy_transfer_with_priority_fee() {
-    use std::str::FromStr;
-    let cb = Pubkey::from_str("ComputeBudget111111111111111111111111111111").unwrap();
-    let system = Pubkey::from_str("11111111111111111111111111111111").unwrap();
     let payer = pk(1);
     let dest = pk(2);
+    let system = system();
+    let cb = compute_budget();
 
     // keys: [payer(signer,writable), dest(writable), system(ro), cb(ro)]
-    let account_keys = vec![payer, dest, system, cb];
-    let header = MessageHeader {
-        num_required_signatures: 1,
-        num_readonly_signed_accounts: 0,
-        num_readonly_unsigned_accounts: 2,
-    };
-
-    // ComputeBudget SetComputeUnitPrice(1000)
-    let mut cb_data = vec![0x03u8];
-    cb_data.extend_from_slice(&1000u64.to_le_bytes());
-    let cb_ix = CompiledInstruction::new_from_raw_parts(3, cb_data, vec![]);
-
-    // System transfer of 500_000_000 lamports: tag 2 (u32 LE) + amount (u64 LE), accounts [0,1]
     let mut tr_data = vec![0x02u8, 0, 0, 0];
     tr_data.extend_from_slice(&500_000_000u64.to_le_bytes());
-    let tr_ix = CompiledInstruction::new_from_raw_parts(2, tr_data, vec![0, 1]);
+    let bytes = legacy_bytes(
+        vec![payer, dest, system, cb],
+        1,
+        0,
+        2,
+        vec![
+            ci(3, vec![], cb_price(1000)),
+            ci(2, vec![0, 1], tr_data),
+        ],
+    );
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let f = ViewFacts::new(&view, None);
 
-    let msg = LegacyMessage {
-        header,
-        account_keys,
-        recent_blockhash: Default::default(),
-        instructions: vec![cb_ix, tr_ix],
-    };
-    let tx = VersionedTransaction {
-        signatures: vec![],
-        message: VersionedMessage::Legacy(msg),
-    };
-
-    let facts = FactBuilder::build(&tx, &NoAlts);
-
-    assert_eq!(facts.version, TxVer::Legacy);
-    assert!(!facts.uses_alt);
-    assert!(!facts.has_unresolved);
-    assert_eq!(facts.fee_payer, payer);
-    assert_eq!(facts.signers, vec![payer]);
+    assert_eq!(f.version(), TxVer::Legacy);
+    assert!(!f.uses_alt());
+    assert!(!f.has_unresolved());
+    assert_eq!(f.num_signers(), 1);
+    assert!(f.fee_payer_is(&payer));
+    assert!(matches!(f.account(0), MaybeKey::Known(p) if p == payer));
 
     // writability: payer + dest writable; system + cb readonly
-    assert_eq!(facts.writable, vec![true, true, false, false]);
-    assert!(matches!(facts.account_keys[0], MaybeKey::Known(p) if p == payer));
+    assert!(f.writable(0));
+    assert!(f.writable(1));
+    assert!(!f.writable(2));
+    assert!(!f.writable(3));
 
-    // fees: no SetComputeUnitLimit -> default 200_000 * 1 non-cb ix; price 1000 micro-lamports
-    assert_eq!(facts.compute_unit_price, 1000);
-    assert_eq!(facts.compute_unit_limit, 200_000);
-    assert_eq!(facts.priority_fee_lamports, 200); // 1000 * 200_000 / 1_000_000
-    assert_eq!(facts.total_fee_lamports, 5200); // 5000 * 1 + 200
+    // fees: only SetComputeUnitPrice -> limit defaults to 200_000 * 1 non-cb ix; price 1000
+    assert_eq!(f.compute_unit_price(), 1000);
+    assert_eq!(f.compute_unit_limit(), 200_000);
+    assert_eq!(f.priority_fee_lamports(), 200);
+    assert_eq!(f.total_fee_lamports(), 5200);
 
-    // instruction facts: transfer ix accounts resolved + writable
-    let tr = &facts.instructions[1];
-    assert!(matches!(tr.program_id, MaybeKey::Known(p) if p == system));
-    assert_eq!(tr.accounts.len(), 2);
-    assert_eq!(tr.writable, vec![true, true]);
+    // transfer instruction: accounts resolved + writable
+    let tr = f.instruction(1).unwrap();
+    assert!(matches!(tr.program_id(), MaybeKey::Known(p) if p == system));
+    assert_eq!(tr.num_accounts(), 2);
+    assert_eq!(tr.writable(0), Some(true));
+    assert_eq!(tr.writable(1), Some(true));
+}
+
+fn v0_with_lookup(table: solana_pubkey::Pubkey) -> Vec<u8> {
+    v0_bytes(
+        vec![pk(1), system()],
+        1,
+        0,
+        1, // system readonly
+        vec![ci(1, vec![0], vec![])],
+        vec![MessageAddressTableLookup {
+            account_key: table,
+            writable_indexes: vec![0],
+            readonly_indexes: vec![1],
+        }],
+    )
+}
+
+#[test]
+fn v0_alt_resolved_vs_unresolved() {
+    let table = pk(42);
+    let writable_acct = pk(100);
+    let readonly_acct = pk(101);
+    let bytes = v0_with_lookup(table);
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+
+    // No cache -> ALT slots unresolved. Order: [payer, system] ++ [writable] ++ [readonly].
+    let f = ViewFacts::new(&view, None);
+    assert_eq!(f.version(), TxVer::V0);
+    assert!(f.uses_alt());
+    assert!(f.has_unresolved());
+    assert_eq!(f.num_accounts(), 4);
+    assert!(matches!(f.account(2), MaybeKey::Unresolved));
+    assert!(matches!(f.account(3), MaybeKey::Unresolved));
+    assert!(f.writable(2)); // writable ALT slot
+    assert!(!f.writable(3)); // readonly ALT slot
+
+    // With cache -> resolved.
+    let cache = AccountLookupTableCache::new().with_table(table, vec![writable_acct, readonly_acct]);
+    let f = ViewFacts::new(&view, Some(&cache));
+    assert!(!f.has_unresolved());
+    assert!(matches!(f.account(2), MaybeKey::Known(p) if p == writable_acct));
+    assert!(matches!(f.account(3), MaybeKey::Known(p) if p == readonly_acct));
+
+    // match_view: defers without the cache, matches with it.
+    let rule = Rule::from_row(
+        1, "w".into(), true, 0, OnUnknown::Skip, false, 1,
+        Pred::WritableAccountContains(Pk(writable_acct)),
+    )
+    .unwrap();
+    let engine = RuleSet::new(vec![rule]);
+    assert!(matches!(engine.match_view(&view, None), MatchResult::Deferred));
+    match engine.match_view(&view, Some(&cache)) {
+        MatchResult::Matched(ids) => assert_eq!(ids, vec![1]),
+        MatchResult::Deferred => panic!("should not defer with full cache"),
+    }
 }

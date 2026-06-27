@@ -174,8 +174,8 @@ When a whole rule evaluates to `Unknown`, the rule's `on_unknown` decides:
 | `treat_true` | rule matches |
 
 Note that at the **engine** level, if *any* account in the transaction is unresolved
-(`has_unresolved == true`), `Engine::match_tx` returns `Deferred` instead of evaluating — resolve
-the tables and re-submit. `on_unknown` matters for direct `eval_rule`/`match_tx_scan` use.
+(`has_unresolved == true`), `RuleSet::match_view` returns `Deferred` instead of evaluating — resolve
+the tables and re-submit. `on_unknown` matters for direct `eval_rule`/`match_view_scan` use.
 
 ## Validation summary (load-time)
 
