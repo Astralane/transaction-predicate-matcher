@@ -1,32 +1,29 @@
 # transaction-predicate-matcher
 
-Match rules against **pending** Solana transactions.
+Match rules against pending Solana transactions.
 
-You write rules as JSON, the engine loads and checks them once, then tells you which rules a
-transaction matches. It's a pure function: no network, no clocks, no randomness. You hand it the
-transaction facts, it hands you the **ids of the rules that matched** — what to *do* about each
-match is yours to decide.
+You write rules as JSON. The matcher loads them once, then tells you which rules a transaction
+matches by returning their ids. What to do with a match is up to you.
 
-The interesting bit: a pending transaction may reference accounts hidden behind Address Lookup
-Tables you haven't resolved yet. Instead of guessing (and risking a wrong `false`), the engine
-reasons in `True` / `False` / **`Unknown`**, and `Unknown` propagates honestly. So you never route
-real money on a maybe.
+Pending transactions often reference accounts behind Address Lookup Tables you haven't resolved
+yet. Rather than guess and risk a wrong `false`, the matcher answers `True`, `False`, or `Unknown`,
+and `Unknown` carries through the logic. If it can't tell, it says so instead of routing on a
+guess.
 
-## Rules describe matching, not outcomes
+## Rules are matching logic, not actions
 
-A rule is just a **predicate** with some metadata (id, priority, enabled, …). It says *what to
-match* and nothing about *what happens next*. When it matches, the engine reports its id; you keep
-the id → action mapping on your side. This keeps actions out of the rule data, so you can change
-what a match *does* without touching (or migrating) the rules themselves.
+A rule is a predicate plus some metadata (id, priority, enabled). It describes what to match and
+nothing else. When it matches you get its id back, and you keep the id-to-action mapping on your
+side. Change what a match does without touching the rules.
 
-Predicates are built from small, composable atoms — signer/fee-payer checks, account membership,
-instruction shape (`program_id`, discriminator, data slices), fees, and so on. There's no
-`transfer_to_X` atom; you compose one from `program_id_is` + `discriminator` + `account_at`. Atoms
-come in two scopes — whole-transaction and single-instruction — so "program X **and** instruction
-Y" always means *the same* instruction, never an accidental match across two.
+Predicates are built from small atoms: signer and fee-payer checks, account membership,
+instruction shape (program id, discriminator, data slices), fees. There's no `transfer_to_X` atom;
+compose one from `program_id_is` + `discriminator` + `account_at`. Atoms come in two scopes,
+whole-transaction and single-instruction, so "program X and instruction Y" always means the same
+instruction.
 
-Need first-match-exclusive routing (the old "switch")? Give the rules descending `priority` and set
-`stop_after_match` — the first match wins and evaluation stops.
+For first-match routing (what a "switch" used to do), give rules descending `priority` and set
+`stop_after_match`. The first match wins and evaluation stops.
 
 ## Quick look
 
@@ -56,21 +53,19 @@ let engine = Engine::new(vec![rule]);
 
 match engine.match_tx(&facts) {
     MatchResult::Matched(ids) => for id in ids { /* look up the action for `id` */ },
-    MatchResult::Deferred     => { /* lookup tables unresolved — resolve and retry */ }
+    MatchResult::Deferred     => { /* lookup tables unresolved, resolve and retry */ }
 }
 ```
 
-`facts` is a `TxFacts`. You can build it yourself, or enable the `build-facts` feature and let
-`FactBuilder` turn a `VersionedTransaction` + your ALT cache into one.
+`facts` is a `TxFacts`. Build it yourself, or turn on the `build-facts` feature and let
+`FactBuilder` build one from a `VersionedTransaction` plus your ALT cache.
 
 ## Example rules
 
-Each block below is the `predicate` JSONB for one rule. The full schema is in
-[`docs/schema_v1.md`](docs/schema_v1.md). All four parse and validate in
-`tests/example_rules.rs`.
+Each block is the `predicate` for one rule. Full schema in [`docs/schema_v1.md`](docs/schema_v1.md);
+all four parse and validate in `tests/example_rules.rs`.
 
-**Durable-nonce transaction** — a tx uses a durable nonce iff its **first** instruction is System
-`AdvanceNonceAccount` (instruction index `4`, u32-LE → `04000000`):
+Durable-nonce transaction (its first instruction is System `AdvanceNonceAccount`, tag `04000000`):
 
 ```json
 { "instruction_at": { "index": 0, "pred": { "and": [
@@ -79,8 +74,7 @@ Each block below is the `predicate` JSONB for one rule. The full schema is in
 ] } } }
 ```
 
-**Raydium AMM v4 swap** — program `675kPX9…`, single-byte tag `09` (`swapBaseIn`) or `0b`
-(`swapBaseOut`):
+Raydium AMM v4 swap (`swapBaseIn` tag `09` or `swapBaseOut` tag `0b`):
 
 ```json
 { "any_instruction": { "and": [
@@ -92,8 +86,7 @@ Each block below is the `predicate` JSONB for one rule. The full schema is in
 ] } }
 ```
 
-**Pump.fun mint** — program `6EF8rre…`, Anchor 8-byte discriminator for `create`
-(`181ec828051c0777`):
+Pump.fun mint (`create`, Anchor discriminator `181ec828051c0777`):
 
 ```json
 { "any_instruction": { "and": [
@@ -102,8 +95,8 @@ Each block below is the `predicate` JSONB for one rule. The full schema is in
 ] } }
 ```
 
-**Transfer of exactly 0.001 SOL to an Astralane tip account** — System `Transfer` (tag `02000000`),
-destination at account index `1`, amount `1_000_000` lamports (= 0.001 SOL) at data offset `4`:
+Transfer of 0.001 SOL to an Astralane tip account (System `Transfer`, destination at index 1,
+1,000,000 lamports at offset 4):
 
 ```json
 { "any_instruction": { "and": [
@@ -114,40 +107,35 @@ destination at account index `1`, amount `1_000_000` lamports (= 0.001 SOL) at d
 ] } }
 ```
 
-> Substitute `<ASTRALANE_TIP_ACCOUNT>` with Astralane's published tip account (a base58 pubkey).
-> Providers usually expose several rotating tip accounts — `or` over an `account_at` per address,
-> and switch `op` to `ge` if you want to match a *minimum* tip rather than an exact amount. Only
-> **top-level** transfers are visible pre-land; CPI transfers are not.
+Fill in `<ASTRALANE_TIP_ACCOUNT>` with their published tip account. There's usually more than one,
+so `or` over an `account_at` per address, and use `op: "ge"` for a minimum tip instead of an exact
+amount. Only top-level transfers are visible before a transaction lands; CPI transfers aren't.
 
-## A few things worth knowing
+## Good to know
 
-- **Fast matching.** An inverted index keeps lookups sub-linear in the rule count instead of
-  scanning every rule on every transaction.
-- **Unresolved lookup tables.** When tables are missing, `match_tx` returns `Deferred` rather than
-  risk a wrong answer. Resolve the tables and re-submit. (`match_tx_scan` evaluates everything
-  anyway if you'd rather degrade than defer.)
-- **Bad rules fail loud, at load.** Malformed base58/hex, type mismatches, unknown atoms — all
-  rejected when you load them, never silently treated as `false`. One bad rule is skipped via
-  `load_rules`; the rest load fine.
-- **Hot reload.** Swap the rule set at runtime without downtime.
+- An inverted index narrows candidates so you don't evaluate every rule on every transaction.
+- If a transaction has unresolved lookup tables, `match_tx` returns `Deferred`. Resolve and retry,
+  or use `match_tx_scan` to evaluate anyway.
+- Bad rules are rejected at load (bad base58/hex, type mismatches, unknown atoms), not silently
+  treated as `false`. `load_rules` skips the bad ones and keeps the rest.
+- Rule sets hot-reload at runtime.
 
-## Adding new keywords later (versioning)
+## Versioning
 
-The engine carries a schema version (`ENGINE_SCHEMA_VERSION`). When you add a new atom, bump it and
-tag rules that use the new feature with that version. An older engine that sees a too-new rule
-**skips it cleanly** instead of choking on a keyword it doesn't recognize — so rolling out new
-rules never breaks already-deployed engines. The public rule types are also `#[non_exhaustive]`,
-so adding atoms is a backwards-compatible change for Rust code depending on this crate.
+The matcher has a schema version (`ENGINE_SCHEMA_VERSION`). When you add a new atom, bump it and tag
+rules that use it. An older build skips a too-new rule instead of choking on a keyword it doesn't
+know, so new rules don't break deployed matchers. Rule types are `#[non_exhaustive]`, so adding
+atoms stays backwards-compatible for code that depends on this crate.
 
-## Not included (by design)
+## Not included
 
-Networking, RPC, ALT fetching, storing rules, mapping ids to actions, and anything that spans
-multiple transactions ("5 txs in 100ms") or needs an ML model. Those live upstream or downstream;
-pass results in as facts, map matched ids to actions on your side.
+Networking, RPC, fetching lookup tables, storing rules, mapping ids to actions, anything spanning
+multiple transactions ("5 txs in 100ms"), or ML. Feed those in as facts and map matched ids to
+actions yourself.
 
 ## Build & test
 
 ```bash
 cargo test                        # core
-cargo test --features build-facts # core + transaction → facts builder
+cargo test --features build-facts # core + transaction -> facts builder
 ```
