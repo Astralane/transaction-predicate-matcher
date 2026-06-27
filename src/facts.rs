@@ -19,10 +19,29 @@ pub enum MaybeKey {
     Unresolved,
 }
 
-/// Consumer-supplied resolved Address Lookup Tables: `table pubkey -> full address list`.
+/// Consumer-supplied resolver for Address Lookup Tables. Implement it over whatever store you
+/// already keep ALT addresses in — a `HashMap`, `DashMap`, `Arc<RwLock<HashMap<…>>>`, etc. — and
+/// pass it by reference. The matcher only ever needs one address at a time, so `resolve` returns a
+/// single (`Copy`) `Pubkey`: an impl can take and drop a lock guard within the call and copy the
+/// address out, without cloning the table's address list.
 ///
-/// Pass `Some(&cache)` to resolve a transaction's ALT-loaded accounts; any table missing from the
-/// cache (or `None` entirely) leaves those accounts `Unresolved`, and the matcher defers.
+/// Return `None` when the table isn't available or the index is out of range; any unresolved ALT
+/// slot makes the matcher defer (or stay `Unknown`).
+///
+/// ```ignore
+/// impl AltLookup for dashmap::DashMap<Pubkey, Vec<Pubkey>> {
+///     fn resolve(&self, table: &Pubkey, index: u8) -> Option<Pubkey> {
+///         self.get(table).and_then(|v| v.get(index as usize).copied())
+///     }
+/// }
+/// ```
+pub trait AltLookup {
+    /// The address at `index` within lookup table `table`, or `None` if unavailable.
+    fn resolve(&self, table: &Pubkey, index: u8) -> Option<Pubkey>;
+}
+
+/// A simple in-memory [`AltLookup`] backed by a `HashMap`, for consumers that don't already have a
+/// store. `table pubkey -> full address list`.
 #[derive(Clone, Debug, Default)]
 pub struct AccountLookupTableCache {
     tables: HashMap<Pubkey, Vec<Pubkey>>,
@@ -42,16 +61,18 @@ impl AccountLookupTableCache {
         self.tables.insert(table, addresses)
     }
 
-    pub fn addresses(&self, table: &Pubkey) -> Option<&[Pubkey]> {
-        self.tables.get(table).map(Vec::as_slice)
-    }
-
     pub fn len(&self) -> usize {
         self.tables.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
+    }
+}
+
+impl AltLookup for AccountLookupTableCache {
+    fn resolve(&self, table: &Pubkey, index: u8) -> Option<Pubkey> {
+        self.tables.get(table).and_then(|v| v.get(index as usize).copied())
     }
 }
 
@@ -67,7 +88,7 @@ impl FromIterator<(Pubkey, Vec<Pubkey>)> for AccountLookupTableCache {
 /// (precomputes only scalars); all account/key lookups are computed on demand.
 pub struct ViewFacts<'a, D: TransactionData> {
     view: &'a SanitizedTransactionView<D>,
-    alt: Option<&'a AccountLookupTableCache>,
+    alt: Option<&'a dyn AltLookup>,
     nrs: usize,
     nrss: usize,
     nru: usize,
@@ -80,7 +101,7 @@ pub struct ViewFacts<'a, D: TransactionData> {
 }
 
 impl<'a, D: TransactionData> ViewFacts<'a, D> {
-    pub fn new(view: &'a SanitizedTransactionView<D>, alt: Option<&'a AccountLookupTableCache>) -> Self {
+    pub fn new(view: &'a SanitizedTransactionView<D>, alt: Option<&'a dyn AltLookup>) -> Self {
         let nrs = view.num_required_signatures() as usize;
         let nrss = view.num_readonly_signed_static_accounts() as usize;
         let nru = view.num_readonly_unsigned_static_accounts() as usize;
@@ -89,26 +110,13 @@ impl<'a, D: TransactionData> ViewFacts<'a, D> {
         let n_readonly_alt = view.total_readonly_lookup_accounts() as usize;
         let uses_alt = view.num_address_table_lookups() > 0;
 
-        // has_unresolved: any lookup whose table is uncached, or whose index is out of range.
-        let mut has_unresolved = false;
-        for l in view.address_table_lookup_iter() {
-            match alt.and_then(|c| c.addresses(l.account_key)) {
-                None => {
-                    if !l.writable_indexes.is_empty() || !l.readonly_indexes.is_empty() {
-                        has_unresolved = true;
-                    }
-                }
-                Some(addrs) => {
-                    if l.writable_indexes
-                        .iter()
-                        .chain(l.readonly_indexes)
-                        .any(|&i| addrs.get(i as usize).is_none())
-                    {
-                        has_unresolved = true;
-                    }
-                }
-            }
-        }
+        // has_unresolved: any ALT index that doesn't resolve (uncached table or out-of-range).
+        let has_unresolved = view.address_table_lookup_iter().any(|l| {
+            l.writable_indexes
+                .iter()
+                .chain(l.readonly_indexes)
+                .any(|&i| alt.and_then(|c| c.resolve(l.account_key, i)).is_none())
+        });
 
         // fees: scan ComputeBudget instructions once, count non-CB instructions.
         let cb = budget::compute_budget_program_id();
@@ -252,17 +260,9 @@ impl<D: TransactionData> IxView<'_, '_, D> {
     }
 }
 
-fn resolve_lookup(
-    alt: Option<&AccountLookupTableCache>,
-    table: &Pubkey,
-    idx: u8,
-) -> MaybeKey {
-    match alt.and_then(|c| c.addresses(table)) {
-        Some(addrs) => addrs
-            .get(idx as usize)
-            .copied()
-            .map(MaybeKey::Known)
-            .unwrap_or(MaybeKey::Unresolved),
+fn resolve_lookup(alt: Option<&dyn AltLookup>, table: &Pubkey, idx: u8) -> MaybeKey {
+    match alt.and_then(|c| c.resolve(table, idx)) {
+        Some(p) => MaybeKey::Known(p),
         None => MaybeKey::Unresolved,
     }
 }
@@ -271,7 +271,7 @@ fn resolve_lookup(
 /// `[ static keys ] ++ [ ALT writable ] ++ [ ALT readonly ]`.
 fn resolve_index<D: TransactionData>(
     view: &SanitizedTransactionView<D>,
-    alt: Option<&AccountLookupTableCache>,
+    alt: Option<&dyn AltLookup>,
     total_static: usize,
     n_writable_alt: usize,
     i: usize,

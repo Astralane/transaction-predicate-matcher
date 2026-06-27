@@ -6,9 +6,13 @@ mod common;
 use agave_transaction_view::transaction_view::SanitizedTransactionView;
 use common::*;
 use solana_message::v0::MessageAddressTableLookup;
+use solana_pubkey::Pubkey;
+use std::collections::HashMap;
+use std::sync::RwLock;
 use transaction_predicate_matcher::value::{Pk, TxVer};
 use transaction_predicate_matcher::{
-    AccountLookupTableCache, RuleSet, MatchResult, MaybeKey, OnUnknown, Pred, Rule, ViewFacts,
+    AccountLookupTableCache, AltLookup, RuleSet, MatchResult, MaybeKey, OnUnknown, Pred, Rule,
+    ViewFacts,
 };
 
 #[test]
@@ -115,4 +119,39 @@ fn v0_alt_resolved_vs_unresolved() {
     let rs = RuleSet::new(vec![rule]);
     assert_eq!(rs.match_view(&view, None), MatchResult::Deferred);
     assert_eq!(rs.match_view(&view, Some(&cache)), MatchResult::Matched(7));
+}
+
+/// A custom lock-based ALT store, like a consumer's `Arc<RwLock<HashMap<…>>>`. Proves a
+/// non-cache backend works through the `AltLookup` trait without cloning the address list.
+struct LockedAlts(RwLock<HashMap<Pubkey, Vec<Pubkey>>>);
+
+impl AltLookup for LockedAlts {
+    fn resolve(&self, table: &Pubkey, index: u8) -> Option<Pubkey> {
+        self.0.read().unwrap().get(table).and_then(|v| v.get(index as usize).copied())
+    }
+}
+
+#[test]
+fn custom_alt_lookup_backend() {
+    let table = pk(42);
+    let writable_acct = pk(100);
+    let readonly_acct = pk(101);
+    let bytes = v0_with_lookup(table);
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+
+    let mut map = HashMap::new();
+    map.insert(table, vec![writable_acct, readonly_acct]);
+    let alts = LockedAlts(RwLock::new(map));
+
+    let f = ViewFacts::new(&view, Some(&alts));
+    assert!(!f.has_unresolved());
+    assert!(matches!(f.account(2), MaybeKey::Known(p) if p == writable_acct));
+
+    let rule = Rule::from_row(
+        9, "w".into(), true, OnUnknown::Skip, 1,
+        Pred::WritableAccountContains(Pk(writable_acct)),
+    )
+    .unwrap();
+    let rs = RuleSet::new(vec![rule]);
+    assert_eq!(rs.match_view(&view, Some(&alts)), MatchResult::Matched(9));
 }

@@ -49,7 +49,7 @@ impl RuleSet {
     pub fn match_view<D: TransactionData>(
         &self,
         view: &SanitizedTransactionView<D>,
-        alt: Option<&AccountLookupTableCache>,
+        alt: Option<&dyn AltLookup>,
     ) -> MatchResult {
         let facts = ViewFacts::new(view, alt);
         let rs = self.inner.load();
@@ -76,7 +76,7 @@ impl RuleSet {
     pub fn match_view_scan<D: TransactionData>(
         &self,
         view: &SanitizedTransactionView<D>,
-        alt: Option<&AccountLookupTableCache>,
+        alt: Option<&dyn AltLookup>,
     ) -> MatchResult {
         let facts = ViewFacts::new(view, alt);
         let rs = self.inner.load();

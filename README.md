@@ -65,6 +65,25 @@ The matcher evaluates straight off the view — no per-transaction allocation. P
 cache missing some tables) and any ALT-loaded accounts stay unresolved, so `match_view` returns
 `Deferred` rather than guess.
 
+`AccountLookupTableCache` is just a convenience. To resolve tables out of a store you already keep
+(a `DashMap`, an `Arc<RwLock<HashMap<…>>>`, …) without cloning anything, implement `AltLookup` on
+it and pass `Some(&store)`:
+
+```rust
+use transaction_predicate_matcher::AltLookup;
+use solana_pubkey::Pubkey;
+
+impl AltLookup for MyAltStore {
+    fn resolve(&self, table: &Pubkey, index: u8) -> Option<Pubkey> {
+        // take a read guard, copy out one 32-byte pubkey, drop the guard
+        self.read().get(table).and_then(|addrs| addrs.get(index as usize).copied())
+    }
+}
+```
+
+`resolve` hands back a single `Copy` `Pubkey`, so the lock guard never has to outlive the call and
+the address list is never cloned.
+
 ## Example rules
 
 Each block is the `predicate` for one rule. Full schema in [`docs/schema_v1.md`](docs/schema_v1.md);
