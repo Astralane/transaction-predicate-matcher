@@ -57,8 +57,21 @@ match engine.match_tx(&facts) {
 }
 ```
 
-`facts` is a `TxFacts`. Build it yourself, or turn on the `build-facts` feature and let
-`FactBuilder` build one from a `VersionedTransaction` plus your ALT cache.
+`facts` is a `TxFacts`. Build it yourself, or turn on the `build-facts` feature and work straight
+from a `SanitizedTransactionView` plus an optional lookup-table cache:
+
+```rust
+use transaction_predicate_matcher::{AccountLookupTableCache, MatchResult};
+
+let cache = AccountLookupTableCache::new().with_table(table_pubkey, addresses);
+match engine.match_view(&view, Some(&cache)) {
+    MatchResult::Matched(ids) => { /* ... */ }
+    MatchResult::Deferred     => { /* a table wasn't in the cache, resolve and retry */ }
+}
+```
+
+Pass `None` (or a cache missing some tables) and any ALT-loaded accounts stay unresolved, so
+`match_view` returns `Deferred` rather than guess.
 
 ## Example rules
 
