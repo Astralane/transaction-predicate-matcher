@@ -41,11 +41,10 @@ Loading and running it:
 use transaction_predicate_matcher::{AccountLookupTableCache, RuleSet, MatchResult, OnUnknown, Rule};
 
 let rule = Rule::load_from_json(
-    7,                       // id (you map this id -> action)
-    "high-priority".into(),  // name
-    true,                    // enabled
-    OnUnknown::Skip,         // what to do on an Unknown result
-    1,                       // schema_version
+    7,                // id (you map this id -> action)
+    true,             // enabled
+    OnUnknown::Skip,  // what to do on an Unknown result
+    1,                // schema_version
     &predicate_json,
 )?;
 

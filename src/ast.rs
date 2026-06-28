@@ -97,7 +97,6 @@ pub const ENGINE_SCHEMA_VERSION: u32 = 1;
 #[non_exhaustive]
 pub struct Rule {
     pub id: i64,
-    pub name: String,
     pub enabled: bool,
     pub on_unknown: OnUnknown,
     /// Schema version this rule was authored against. The engine accepts rules with
@@ -112,7 +111,6 @@ impl Rule {
     /// first failure).
     pub fn from_row(
         id: i64,
-        name: String,
         enabled: bool,
         on_unknown: OnUnknown,
         schema_version: u32,
@@ -122,7 +120,6 @@ impl Rule {
         validate(&predicate)?;
         Ok(Rule {
             id,
-            name,
             enabled,
             on_unknown,
             schema_version,
@@ -134,7 +131,6 @@ impl Rule {
     /// older engine never trips over keywords it doesn't know — it skips the future rule cleanly.
     pub fn load_from_json(
         id: i64,
-        name: String,
         enabled: bool,
         on_unknown: OnUnknown,
         schema_version: u32,
@@ -142,7 +138,7 @@ impl Rule {
     ) -> Result<Rule, LoadError> {
         check_schema_version(schema_version)?;
         let predicate: Pred = serde_json::from_value(predicate_json.clone())?;
-        Self::from_row(id, name, enabled, on_unknown, schema_version, predicate)
+        Self::from_row(id, enabled, on_unknown, schema_version, predicate)
     }
 }
 
@@ -160,7 +156,6 @@ fn check_schema_version(schema_version: u32) -> Result<(), LoadError> {
 /// Order matters: the position in the input `Vec` is the rule's priority.
 pub struct RawRule {
     pub id: i64,
-    pub name: String,
     pub enabled: bool,
     pub on_unknown: OnUnknown,
     pub schema_version: u32,
@@ -174,7 +169,7 @@ pub fn load_rules(raw: Vec<RawRule>) -> (Vec<Rule>, Vec<(i64, LoadError)>) {
     let mut ok = Vec::new();
     let mut errs = Vec::new();
     for r in raw {
-        match Rule::load_from_json(r.id, r.name, r.enabled, r.on_unknown, r.schema_version, &r.predicate) {
+        match Rule::load_from_json(r.id, r.enabled, r.on_unknown, r.schema_version, &r.predicate) {
             Ok(rule) => ok.push(rule),
             Err(e) => errs.push((r.id, e)),
         }

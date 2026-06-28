@@ -109,7 +109,6 @@ fn v0_alt_resolved_vs_unresolved() {
     // match_view: defers without the cache, matches with it.
     let rule = Rule::from_row(
         7,
-        "w".into(),
         true,
         OnUnknown::Skip,
         1,
@@ -148,7 +147,7 @@ fn custom_alt_lookup_backend() {
     assert!(matches!(f.account(2), MaybeKey::Known(p) if p == writable_acct));
 
     let rule = Rule::from_row(
-        9, "w".into(), true, OnUnknown::Skip, 1,
+        9, true, OnUnknown::Skip, 1,
         Pred::WritableAccountContains(Pk(writable_acct)),
     )
     .unwrap();

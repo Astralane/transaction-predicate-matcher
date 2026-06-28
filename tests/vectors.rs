@@ -24,10 +24,10 @@ fn disc(bytes: &[u8]) -> IxPred {
     }
 }
 fn rule(id: i64, predicate: Pred) -> Rule {
-    Rule::from_row(id, format!("r{id}"), true, OnUnknown::Skip, 1, predicate).unwrap()
+    Rule::from_row(id, true, OnUnknown::Skip, 1, predicate).unwrap()
 }
 fn rule_ou(id: i64, ou: OnUnknown, predicate: Pred) -> Rule {
-    Rule::from_row(id, format!("r{id}"), true, ou, 1, predicate).unwrap()
+    Rule::from_row(id, true, ou, 1, predicate).unwrap()
 }
 fn fee_ge(n: u64) -> Pred {
     Pred::PriorityFeeLamports { op: Cmp::Ge, n }
@@ -268,7 +268,6 @@ fn schema_version_gating() {
     let body = serde_json::json!({ "uses_alt": true });
     let mk = |id: i64, ver: u32| RawRule {
         id,
-        name: format!("r{id}"),
         enabled: true,
         on_unknown: OnUnknown::Skip,
         schema_version: ver,

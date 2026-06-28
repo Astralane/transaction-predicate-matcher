@@ -16,7 +16,6 @@ rows in the order you want them tried (the first row is tried first).
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `i64` | reported on match; you map it → action |
-| `name` | `text` | human label |
 | `enabled` | `bool` | disabled rules are skipped |
 | `on_unknown` | `text` | `skip` (default) \| `fail_closed` \| `treat_true` — see [Tri-state](#tri-state-and-on_unknown) |
 | `schema_version` | `u32` | the schema version this predicate targets; rules with `schema_version > ENGINE_SCHEMA_VERSION` are skipped at load |

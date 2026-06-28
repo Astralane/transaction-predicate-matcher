@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde         = { version = "1", features = ["derive"] }
-serde_json    = "1"
-hex           = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
 solana-pubkey = "2"
-arc-swap      = "1"
-thiserror     = "1"
+arc-swap = "1"
+thiserror = "1"
 # Zero-copy view over a serialized transaction. Pinned to the 2.x line so it shares solana-pubkey
 # 2.x with this crate (a 3.x/4.x view would carry an incompatible Pubkey type and a V1 tx format).
 agave-transaction-view = "2.2"
 
 [dev-dependencies]
-serde_json         = "1"
-bincode            = "1"
-solana-signature   = "2"
-solana-message     = { version = "2.2", features = ["serde"] }
+serde_json = "1"
+bincode = "1"
+solana-signature = "2"
+solana-message = { version = "2.2", features = ["serde"] }
 solana-transaction = { version = "2.2", features = ["serde"] }
