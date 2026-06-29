@@ -2,21 +2,16 @@
 
 Match rules against Solana transactions.
 
-You write rules as an ordered list, predicates as JSON. The matcher loads them once, then tells you
-which rule a transaction matches by returning its id. Rules are tried top to bottom and the first
-match wins, so put higher-priority rules first. What to do with a match is up to you.
+A rule is a predicate plus a little metadata (id, name, enabled). It describes what to match and
+nothing else, order is priority (the rule's position in the list).
+When it matches you get its `id` back and map that to an action on your side.
 
-Pending transactions often reference accounts behind Address Lookup Tables you haven't resolved
+Solana transactions often reference accounts behind Address Lookup Tables you haven't resolved
 yet. Rather than guess and risk a wrong `false`, the matcher answers `True`, `False`, or `Unknown`,
 and `Unknown` carries through the logic. If it can't tell, it says so instead of routing on a
 guess.
 
-## Rules are matching logic, not actions
-
-A rule is a predicate plus a little metadata (id, name, enabled). It describes what to match and
-nothing else — there's no priority number; order is priority (the rule's position in the list).
-When it matches you get its `id` back and map that to an action on your side. Change what a match
-does without touching the rules.
+## Atoms
 
 Predicates are built from small atoms: signer and fee-payer checks, account membership,
 instruction shape (program id, discriminator, data slices), fees. There's no `transfer_to_X` atom;
