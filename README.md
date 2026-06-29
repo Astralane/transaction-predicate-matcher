@@ -8,8 +8,7 @@ When it matches you get its `id` back and map that to an action on your side.
 
 Solana transactions often reference accounts behind Address Lookup Tables you haven't resolved
 yet. Rather than guess and risk a wrong `false`, the matcher answers `True`, `False`, or `Unknown`,
-and `Unknown` carries through the logic. If it can't tell, it says so instead of routing on a
-guess.
+and `Unknown` carries through the logic.
 
 ## Atoms
 
@@ -18,9 +17,6 @@ instruction shape (program id, discriminator, data slices), fees. There's no `tr
 compose one from `program_id_is` + `discriminator` + `account_at`. Atoms come in two scopes,
 whole-transaction and single-instruction, so "program X and instruction Y" always means the same
 instruction.
-
-First-match routing (what a "switch" used to do) is just ordering: list the rules from most to
-least specific and the matcher returns the first that matches.
 
 ## Quick look
 
@@ -57,11 +53,7 @@ match rules.match_view(&view, Some(&cache)) {
 
 The matcher evaluates straight off the view — no per-transaction allocation. Pass `None` (or a
 cache missing some tables) and any ALT-loaded accounts stay unresolved, so `match_view` returns
-`Deferred` rather than guess.
-
-`AccountLookupTableCache` is just a convenience. To resolve tables out of a store you already keep
-(a `DashMap`, an `Arc<RwLock<HashMap<…>>>`, …) without cloning anything, implement `AltLookup` on
-it and pass `Some(&store)`:
+`Deferred`.
 
 ```rust
 use transaction_predicate_matcher::AltLookup;
@@ -74,9 +66,6 @@ impl AltLookup for MyAltStore {
     }
 }
 ```
-
-`resolve` hands back a single `Copy` `Pubkey`, so the lock guard never has to outlive the call and
-the address list is never cloned.
 
 ## Example rules
 
@@ -125,31 +114,11 @@ Transfer of 0.001 SOL to an Astralane tip account (System `Transfer`, destinatio
 ] } }
 ```
 
-Fill in `<ASTRALANE_TIP_ACCOUNT>` with their published tip account. There's usually more than one,
-so `or` over an `account_at` per address, and use `op: "ge"` for a minimum tip instead of an exact
-amount. Only top-level transfers are visible before a transaction lands; CPI transfers aren't.
-
-## Good to know
-
-- An inverted index narrows candidates so you don't evaluate every rule on every transaction.
-- If a transaction has unresolved lookup tables, `match_view` returns `Deferred`. Resolve and retry,
-  or use `match_view_scan` to evaluate anyway.
-- Bad rules are rejected at load (bad base58/hex, type mismatches, unknown atoms), not silently
-  treated as `false`. `load_rules` skips the bad ones and keeps the rest.
-- Rule sets hot-reload at runtime.
-
 ## Versioning
 
-The matcher has a schema version (`ENGINE_SCHEMA_VERSION`). When you add a new atom, bump it and tag
-rules that use it. An older build skips a too-new rule instead of choking on a keyword it doesn't
-know, so new rules don't break deployed matchers. Rule types are `#[non_exhaustive]`, so adding
+The matcher has a schema version (`ENGINE_SCHEMA_VERSION`). When a new atom is added, bump it and tag
+rules that use it. Rule types are `#[non_exhaustive]`, so adding 
 atoms stays backwards-compatible for code that depends on this crate.
-
-## Not included
-
-Networking, RPC, fetching lookup tables, storing rules, mapping ids to actions, anything spanning
-multiple transactions ("5 txs in 100ms"), or ML. Feed those in as facts and map the matched id to
-an action yourself.
 
 ## Build & test
 
