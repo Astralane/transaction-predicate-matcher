@@ -9,8 +9,8 @@ use crate::value::TxVer;
 use agave_transaction_view::transaction_data::TransactionData;
 use agave_transaction_view::transaction_version::TransactionVersion;
 use agave_transaction_view::transaction_view::SanitizedTransactionView;
+use rustc_hash::FxHashMap;
 use solana_pubkey::Pubkey;
-use std::collections::HashMap;
 
 /// A resolved account key, or a marker that it sits behind an unresolved ALT.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -44,7 +44,7 @@ pub trait AltLookup {
 /// store. `table pubkey -> full address list`.
 #[derive(Clone, Debug, Default)]
 pub struct AccountLookupTableCache {
-    tables: HashMap<Pubkey, Vec<Pubkey>>,
+    tables: FxHashMap<Pubkey, Vec<Pubkey>>,
 }
 
 impl AccountLookupTableCache {

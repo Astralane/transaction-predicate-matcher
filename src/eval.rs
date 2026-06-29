@@ -34,7 +34,10 @@ pub fn eval_slice(data: &[u8], offset: usize, kind: SliceKind, op: Cmp, val: &Sl
         U32Le | U32Be => 4,
         U64Le | U64Be | I64Le => 8,
     };
-    let Some(slice) = data.get(offset..offset + len) else {
+    let Some(end) = offset.checked_add(len) else {
+        return false;
+    };
+    let Some(slice) = data.get(offset..end) else {
         return false;
     };
     match kind {
@@ -159,9 +162,9 @@ pub fn eval_ix<D: TransactionData>(p: &IxPred, ix: &IxView<'_, '_, D>) -> Tri {
             MaybeKey::Known(p) => b(p == pk.0),
             MaybeKey::Unresolved => Tri::Unknown,
         },
-        Discriminator { offset, bytes } => b(ix
-            .data()
-            .get(*offset..offset + bytes.0.len())
+        Discriminator { offset, bytes } => b(offset
+            .checked_add(bytes.0.len())
+            .and_then(|end| ix.data().get(*offset..end))
             .is_some_and(|s| s == bytes.0.as_slice())),
         DataSlice {
             offset,

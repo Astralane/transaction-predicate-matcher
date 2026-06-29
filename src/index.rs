@@ -2,7 +2,9 @@
 
 use crate::{ast::*, facts::*};
 use agave_transaction_view::transaction_data::TransactionData;
-use std::collections::{HashMap, HashSet};
+// FxHash: keys are tx-derived (not adversary-chosen) and a collision only costs a redundant
+// eval, so trade SipHash's DoS-resistance for speed.
+use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
@@ -122,11 +124,14 @@ pub fn ix_triggers(p: &IxPred) -> Trig {
                 _ => None,
             });
             match (prog, d0) {
-                (Some(p), Some(d)) => {
+                // present_keys only emits ProgramDisc keys for disc lengths {8,4,1}; for any
+                // other length fall back to the Program key, else the rule is never a candidate.
+                (Some(p), Some(d)) if matches!(d.len(), 1 | 4 | 8) => {
                     let mut key = p.as_ref().to_vec();
                     key.extend_from_slice(&d);
                     one(Kind::ProgramDisc, &key)
                 }
+                (Some(p), Some(_)) => one(Kind::Program, p.as_ref()),
                 (Some(p), None) => one(Kind::Program, p.as_ref()),
                 _ => most_selective(v.iter().map(ix_triggers)),
             }
@@ -142,13 +147,13 @@ pub fn rule_triggers(rule: &Rule) -> Trig {
 
 /// Inverted index over rule **positions** (index in the rule `Vec`).
 pub struct CandidateIndex {
-    map: HashMap<TrigKey, Vec<usize>>,
+    map: FxHashMap<TrigKey, Vec<usize>>,
     always: Vec<usize>,
 }
 
 impl CandidateIndex {
     pub fn build(rules: &[Rule]) -> Self {
-        let mut map: HashMap<TrigKey, Vec<usize>> = HashMap::new();
+        let mut map: FxHashMap<TrigKey, Vec<usize>> = FxHashMap::default();
         let mut always = Vec::new();
         for (i, r) in rules.iter().enumerate().filter(|(_, r)| r.enabled) {
             match rule_triggers(r) {
@@ -164,8 +169,8 @@ impl CandidateIndex {
     }
 
     /// Candidate rule positions for a tx (Full-ALT path).
-    pub fn candidates<D: TransactionData>(&self, tx: &ViewFacts<D>) -> HashSet<usize> {
-        let mut out: HashSet<usize> = self.always.iter().copied().collect();
+    pub fn candidates<D: TransactionData>(&self, tx: &ViewFacts<D>) -> FxHashSet<usize> {
+        let mut out: FxHashSet<usize> = self.always.iter().copied().collect();
         for key in present_keys(tx) {
             if let Some(ids) = self.map.get(&key) {
                 out.extend(ids);
