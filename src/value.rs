@@ -39,9 +39,12 @@ pub enum Cmp {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TxVer {
     Legacy,
     V0,
+    /// Only reachable through an `agave-transaction-view` on the 4.x line.
+    V1,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]

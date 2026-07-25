@@ -47,3 +47,27 @@ fn astralane_tip_transfer_0_001_sol() {
         { "data_slice": { "offset": 4, "kind": "u64_le", "op": "eq", "value": 1000000 } }
     ] } }));
 }
+
+/// `tx_version: "v1"` is a new value on an existing atom, not a new atom, so it loads at the
+/// current schema version. Guards the enum against a silent regression if the variant is dropped.
+#[test]
+fn tx_version_v1_parses_at_current_schema() {
+    use transaction_predicate_matcher::ENGINE_SCHEMA_VERSION;
+
+    let pred = json!({ "tx_version": "v1" });
+    Rule::load_from_json(1, true, OnUnknown::Skip, ENGINE_SCHEMA_VERSION, &pred)
+        .expect("v1 should parse at the current engine schema version");
+
+    // A rule tagged newer than the engine is still rejected at load.
+    assert!(
+        Rule::load_from_json(
+            2,
+            true,
+            OnUnknown::Skip,
+            ENGINE_SCHEMA_VERSION + 1,
+            &json!({ "tx_version": "v0" })
+        )
+        .is_err(),
+        "a rule above the engine schema version must be rejected"
+    );
+}

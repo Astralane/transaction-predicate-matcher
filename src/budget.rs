@@ -66,3 +66,20 @@ pub fn fees(scan: ComputeBudgetScan, num_required_signatures: u64, non_cb_ix_cou
         total_fee_lamports: base.saturating_add(priority),
     }
 }
+
+/// Resolve fee facts from a V1 transaction's inline config. V1 specifies the priority fee
+/// directly in lamports and has no compute-unit-price field.
+pub(crate) fn v1_fees(
+    priority_fee_lamports: Option<u64>,
+    compute_unit_limit: Option<u32>,
+    num_required_signatures: u64,
+) -> Fees {
+    let priority = priority_fee_lamports.unwrap_or(0);
+    let base = BASE_FEE_PER_SIG.saturating_mul(num_required_signatures);
+    Fees {
+        compute_unit_price: 0,
+        compute_unit_limit: compute_unit_limit.map_or(0, u64::from),
+        priority_fee_lamports: priority,
+        total_fee_lamports: base.saturating_add(priority),
+    }
+}

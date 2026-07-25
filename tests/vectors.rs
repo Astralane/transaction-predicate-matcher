@@ -38,7 +38,7 @@ fn fee_ge(n: u64) -> Pred {
 macro_rules! facts {
     ($bytes:expr, $alt:expr, $f:ident => $body:expr) => {{
         let bytes = $bytes;
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         let $f = ViewFacts::new(&view, $alt);
         $body
     }};
@@ -61,7 +61,7 @@ fn t1_same_instruction_vs_anywhere() {
             ci(2, vec![], Z8.to_vec()),
         ],
     );
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let f = ViewFacts::new(&view, None);
 
     let r1 = Pred::AnyInstruction(Box::new(IxPred::And(vec![
@@ -90,7 +90,7 @@ fn t2_data_slice_numeric() {
     let mut data = vec![0x02, 0x00, 0x00, 0x00];
     data.extend_from_slice(&500_000_000u64.to_le_bytes());
     let bytes = legacy_bytes(vec![pk(200), system()], 1, 0, 1, vec![ci(1, vec![0], data)]);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let f = ViewFacts::new(&view, None);
 
     let mk = |op, val| Pred::AnyInstruction(Box::new(IxPred::DataSlice {
@@ -167,7 +167,7 @@ fn t4_first_match() {
     let rules = RuleSet::new(fee_router());
     let winner = |fee: u64| {
         let bytes = fee_tx_bytes(fee);
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         rules.match_view(&view, None)
     };
     assert_eq!(winner(2_000_000_000), MatchResult::Matched(10)); // immediate
@@ -218,7 +218,7 @@ fn t6_index_soundness() {
             ci(2, vec![], Z8.to_vec()),
         ],
     );
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let f = ViewFacts::new(&view, None);
 
     let cands = idx.candidates(&f);
@@ -237,7 +237,7 @@ fn t6_index_soundness() {
 fn t7_defer_partial_alt() {
     let engine = RuleSet::new(fee_router());
     let bytes = unresolved_alt_bytes();
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     assert!(matches!(engine.match_view(&view, None), MatchResult::Deferred));
 }
 
@@ -308,7 +308,7 @@ fn index_equals_bruteforce() {
         fee_tx_bytes(750_000_000),
     ];
     for (i, bytes) in cases.iter().enumerate() {
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         assert_eq!(
             rs.match_view(&view, None),
             rs.match_view_scan(&view, None),
@@ -316,6 +316,6 @@ fn index_equals_bruteforce() {
         );
     }
     // dest case must hit the account rule (id 101).
-    let view = SanitizedTransactionView::try_new_sanitized(cases[2].as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(cases[2].as_slice(), true).unwrap();
     assert_eq!(rs.match_view(&view, None), MatchResult::Matched(101));
 }

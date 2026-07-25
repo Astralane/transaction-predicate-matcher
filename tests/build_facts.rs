@@ -35,7 +35,7 @@ fn legacy_transfer_with_priority_fee() {
             ci(2, vec![0, 1], tr_data),
         ],
     );
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let f = ViewFacts::new(&view, None);
 
     assert_eq!(f.version(), TxVer::Legacy);
@@ -86,7 +86,7 @@ fn v0_alt_resolved_vs_unresolved() {
     let writable_acct = pk(100);
     let readonly_acct = pk(101);
     let bytes = v0_with_lookup(table);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     // No cache -> ALT slots unresolved. Order: [payer, system] ++ [writable] ++ [readonly].
     let f = ViewFacts::new(&view, None);
@@ -120,6 +120,33 @@ fn v0_alt_resolved_vs_unresolved() {
     assert_eq!(rs.match_view(&view, Some(&cache)), MatchResult::Matched(7));
 }
 
+#[test]
+fn v1_inline_fee_config() {
+    // V1 wire layout: one signature, version/header, config mask, lifetime, counts, keys,
+    // config values, then one instruction header and its payload.
+    let mut bytes = vec![0x81, 1, 0, 1];
+    bytes.extend_from_slice(&0b111u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 32]);
+    bytes.extend_from_slice(&[1, 2]);
+    bytes.extend_from_slice(pk(200).as_ref());
+    bytes.extend_from_slice(pk(1).as_ref());
+    bytes.extend_from_slice(&123_456u64.to_le_bytes());
+    bytes.extend_from_slice(&300_000u32.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&3u16.to_le_bytes());
+    bytes.extend_from_slice(&[1, 2, 3]);
+    bytes.extend_from_slice(&[0; 64]);
+
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+    let f = ViewFacts::new(&view, None);
+
+    assert_eq!(f.version(), TxVer::V1);
+    assert_eq!(f.compute_unit_price(), 0);
+    assert_eq!(f.compute_unit_limit(), 300_000);
+    assert_eq!(f.priority_fee_lamports(), 123_456);
+    assert_eq!(f.total_fee_lamports(), 128_456);
+}
+
 /// A custom lock-based ALT store, like a consumer's `Arc<RwLock<HashMap<…>>>`. Proves a
 /// non-cache backend works through the `AltLookup` trait without cloning the address list.
 struct LockedAlts(RwLock<HashMap<Pubkey, Vec<Pubkey>>>);
@@ -136,7 +163,7 @@ fn custom_alt_lookup_backend() {
     let writable_acct = pk(100);
     let readonly_acct = pk(101);
     let bytes = v0_with_lookup(table);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     let mut map = HashMap::new();
     map.insert(table, vec![writable_acct, readonly_acct]);

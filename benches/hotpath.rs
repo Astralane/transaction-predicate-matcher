@@ -70,9 +70,9 @@ fn filler_rule(id: i64) -> Rule {
 fn instr_scaling(c: &mut Criterion) {
     let mut g = c.benchmark_group("instr_scaling");
     let rs = RuleSet::new(vec![raydium_rule(1)]);
-    for &n in &[1usize, 4, 16, 64, 256, 1024] {
+    for &n in &[1usize, 4, 16, 64] {
         let bytes = tx_with_n_instructions(n);
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         g.throughput(Throughput::Elements(n as u64));
         g.bench_with_input(BenchmarkId::from_parameter(n), &view, |b, view| {
             b.iter(|| black_box(rs.match_view(black_box(view), None)));
@@ -85,7 +85,7 @@ fn rule_scaling(c: &mut Criterion) {
     let mut g = c.benchmark_group("rule_scaling");
     // realistic-ish tx: 6 instructions, the last is the Raydium swap.
     let bytes = tx_with_n_instructions(6);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     for &n_rules in &[1usize, 10, 100, 1000] {
         // 1 matching rule at the END, n_rules-1 fillers first => index must skip the fillers.

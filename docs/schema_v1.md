@@ -46,7 +46,7 @@ Struct atoms use `deny_unknown_fields` — an unexpected key is a load error.
 | `Pk` | base58 string | a 32-byte pubkey; parsed at load (bad base58 → error) |
 | `Bytes` | hex string (lowercase, no `0x`) | raw bytes; any length unless noted (e.g. discriminator ≥ 1) |
 | `Cmp` | `"eq"`,`"ne"`,`"lt"`,`"le"`,`"gt"`,`"ge"` | integer comparison operator |
-| `TxVer` | `"legacy"`, `"v0"` | transaction version |
+| `TxVer` | `"legacy"`, `"v0"`, `"v1"` | transaction version |
 | `SliceKind` | see [data_slice](#data_slice) | how to read bytes at an offset |
 | `SliceVal` | number **or** hex string | compare target for `data_slice` |
 | index / count / offset / `n` | non-negative integer | `usize`/`u64` as noted |
@@ -99,6 +99,10 @@ accident.
 
 All are concrete `u64`; **absence is modeled as 0** (e.g. no `SetComputeUnitPrice` ⇒
 `compute_unit_price = 0` ⇒ `priority_fee_lamports = 0`).
+
+For V1 transactions, `compute_unit_limit` and `priority_fee_lamports` come from the inline
+transaction config. V1 has no compute-unit-price field, so `compute_unit_price` is 0;
+`total_fee_lamports` is the signature base fee plus the inline priority fee.
 
 ```json
 { "compute_unit_price":    { "op": "ge", "n": 1000 } }     // micro-lamports per CU
