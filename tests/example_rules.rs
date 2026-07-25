@@ -48,10 +48,10 @@ fn astralane_tip_transfer_0_001_sol() {
     ] } }));
 }
 
-/// `tx_version: "v1"` needs schema version 2. Guards the enum and the loader against a silent
-/// regression if the variant is dropped.
+/// `tx_version: "v1"` is a new value on an existing atom, not a new atom, so it loads at the
+/// current schema version. Guards the enum against a silent regression if the variant is dropped.
 #[test]
-fn tx_version_v1_parses_at_schema_2() {
+fn tx_version_v1_parses_at_current_schema() {
     use transaction_predicate_matcher::ENGINE_SCHEMA_VERSION;
 
     let pred = json!({ "tx_version": "v1" });

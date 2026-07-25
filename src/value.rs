@@ -43,7 +43,7 @@ pub enum Cmp {
 pub enum TxVer {
     Legacy,
     V0,
-    /// Requires schema version 2.
+    /// Only reachable through an `agave-transaction-view` on the 4.x line.
     V1,
 }
 

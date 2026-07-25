@@ -1,8 +1,7 @@
 # Rule predicate schema — v1
 
 This document defines the JSON(B) schema for a rule's `predicate` in
-`transaction-predicate-matcher`. The engine is at `ENGINE_SCHEMA_VERSION = 2`; a rule is rejected
-at load only when its `schema_version` is newer than the engine's.
+`transaction-predicate-matcher`, schema version **1** (`ENGINE_SCHEMA_VERSION = 1`).
 
 A rule is **matching logic only** — it carries no decision/action and no priority number. Rules are
 matched in list order and the **first match wins**; the matcher reports that rule's `id`. The

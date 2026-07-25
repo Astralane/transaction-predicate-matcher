@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "transaction-predicate-matcher"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "agave-transaction-view",
  "arc-swap",
