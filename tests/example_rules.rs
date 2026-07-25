@@ -47,3 +47,28 @@ fn astralane_tip_transfer_0_001_sol() {
         { "data_slice": { "offset": 4, "kind": "u64_le", "op": "eq", "value": 1000000 } }
     ] } }));
 }
+
+/// `tx_version: "v1"` needs schema version 2. Guards the enum and the loader against a silent
+/// regression if the variant is dropped.
+#[test]
+fn tx_version_v1_parses_at_schema_2() {
+    use transaction_predicate_matcher::ENGINE_SCHEMA_VERSION;
+
+    assert!(ENGINE_SCHEMA_VERSION >= 2);
+    let pred = json!({ "tx_version": "v1" });
+    Rule::load_from_json(1, true, OnUnknown::Skip, ENGINE_SCHEMA_VERSION, &pred)
+        .expect("v1 should parse at the current engine schema version");
+
+    // A rule tagged newer than the engine is still rejected at load.
+    assert!(
+        Rule::load_from_json(
+            2,
+            true,
+            OnUnknown::Skip,
+            ENGINE_SCHEMA_VERSION + 1,
+            &json!({ "tx_version": "v0" })
+        )
+        .is_err(),
+        "a rule above the engine schema version must be rejected"
+    );
+}

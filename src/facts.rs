@@ -151,6 +151,7 @@ impl<'a, D: TransactionData> ViewFacts<'a, D> {
         match self.view.version() {
             TransactionVersion::Legacy => TxVer::Legacy,
             TransactionVersion::V0 => TxVer::V0,
+            TransactionVersion::V1 => TxVer::V1,
         }
     }
 

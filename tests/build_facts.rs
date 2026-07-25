@@ -35,7 +35,7 @@ fn legacy_transfer_with_priority_fee() {
             ci(2, vec![0, 1], tr_data),
         ],
     );
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let f = ViewFacts::new(&view, None);
 
     assert_eq!(f.version(), TxVer::Legacy);
@@ -86,7 +86,7 @@ fn v0_alt_resolved_vs_unresolved() {
     let writable_acct = pk(100);
     let readonly_acct = pk(101);
     let bytes = v0_with_lookup(table);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     // No cache -> ALT slots unresolved. Order: [payer, system] ++ [writable] ++ [readonly].
     let f = ViewFacts::new(&view, None);
@@ -136,7 +136,7 @@ fn custom_alt_lookup_backend() {
     let writable_acct = pk(100);
     let readonly_acct = pk(101);
     let bytes = v0_with_lookup(table);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     let mut map = HashMap::new();
     map.insert(table, vec![writable_acct, readonly_acct]);

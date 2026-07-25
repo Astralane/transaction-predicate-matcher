@@ -1,7 +1,8 @@
 # Rule predicate schema — v1
 
 This document defines the JSON(B) schema for a rule's `predicate` in
-`transaction-predicate-matcher`, schema version **1** (`ENGINE_SCHEMA_VERSION = 1`).
+`transaction-predicate-matcher`. The engine is at `ENGINE_SCHEMA_VERSION = 2`; a rule is rejected
+at load only when its `schema_version` is newer than the engine's.
 
 A rule is **matching logic only** — it carries no decision/action and no priority number. Rules are
 matched in list order and the **first match wins**; the matcher reports that rule's `id`. The
@@ -46,7 +47,7 @@ Struct atoms use `deny_unknown_fields` — an unexpected key is a load error.
 | `Pk` | base58 string | a 32-byte pubkey; parsed at load (bad base58 → error) |
 | `Bytes` | hex string (lowercase, no `0x`) | raw bytes; any length unless noted (e.g. discriminator ≥ 1) |
 | `Cmp` | `"eq"`,`"ne"`,`"lt"`,`"le"`,`"gt"`,`"ge"` | integer comparison operator |
-| `TxVer` | `"legacy"`, `"v0"` | transaction version |
+| `TxVer` | `"legacy"`, `"v0"`, `"v1"` | transaction version |
 | `SliceKind` | see [data_slice](#data_slice) | how to read bytes at an offset |
 | `SliceVal` | number **or** hex string | compare target for `data_slice` |
 | index / count / offset / `n` | non-negative integer | `usize`/`u64` as noted |

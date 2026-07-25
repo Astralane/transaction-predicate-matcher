@@ -87,7 +87,7 @@ pub enum OnUnknown {
 /// predicate keyword. A rule authored for a newer schema version than the running engine
 /// supports is skipped at load (see [`Rule::load_from_json`]) instead of breaking the whole rule
 /// set — so adding keywords never breaks an older deployed engine.
-pub const ENGINE_SCHEMA_VERSION: u32 = 1;
+pub const ENGINE_SCHEMA_VERSION: u32 = 2;
 
 /// A single matching rule. The `predicate` is the only thing authored in JSON; everything else is
 /// rule metadata. There is no priority field — a rule's position in the [`crate::RuleSet`]'s `Vec`

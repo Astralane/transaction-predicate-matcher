@@ -34,7 +34,7 @@ fn finding1_discriminator_length_2_is_missed_by_index() {
     let mut data = disc2.clone();
     data.extend_from_slice(&[0xFF, 0xFF]);
     let bytes = one_ix_tx(program, data);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
 
     let indexed = rs.match_view(&view, None);
     let scanned = rs.match_view_scan(&view, None);
@@ -62,7 +62,7 @@ fn finding1b_discriminator_lengths_1_4_8_are_fine() {
         let mut data = disc.clone();
         data.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
         let bytes = one_ix_tx(program, data);
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         assert_eq!(
             rs.match_view(&view, None),
             rs.match_view_scan(&view, None),
@@ -83,7 +83,7 @@ fn finding2_discriminator_huge_offset_overflow() {
     ])));
     let rs = RuleSet::new(vec![rule(7, predicate)]);
     let bytes = one_ix_tx(program, vec![1, 2, 3, 4, 5, 6, 7, 8]);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     // Pre-fix this panicked (overflow) in overflow-checked builds instead of returning NoMatch.
     let r = rs.match_view(&view, None);
     assert_eq!(r, MatchResult::NoMatch, "huge offset must be a clean non-match, not a panic");
@@ -100,7 +100,7 @@ fn finding2b_data_slice_huge_offset_overflow() {
     }));
     let rs = RuleSet::new(vec![rule(7, predicate)]);
     let bytes = one_ix_tx(program, vec![1, 2, 3, 4, 5, 6, 7, 8]);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice()).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
     let r = rs.match_view(&view, None);
     assert_eq!(r, MatchResult::NoMatch, "huge data_slice offset must be a clean non-match, not a panic");
 }
