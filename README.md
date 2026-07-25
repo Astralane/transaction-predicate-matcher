@@ -118,7 +118,7 @@ Transfer of 0.001 SOL to an Astralane tip account (System `Transfer`, destinatio
 
 The matcher has a schema version (`ENGINE_SCHEMA_VERSION`, currently **2**). When a new atom or value
 is added, bump it and tag rules that use it; a rule is rejected only if it asks for a schema version
-the running engine does not have. Rule types are `#[non_exhaustive]`, so adding 
+the running engine does not have. Rule types are `#[non_exhaustive]`, so adding
 atoms stays backwards-compatible for code that depends on this crate.
 
 ## Build & test

@@ -101,6 +101,10 @@ accident.
 All are concrete `u64`; **absence is modeled as 0** (e.g. no `SetComputeUnitPrice` ⇒
 `compute_unit_price = 0` ⇒ `priority_fee_lamports = 0`).
 
+For V1 transactions, `compute_unit_limit` and `priority_fee_lamports` come from the inline
+transaction config. V1 has no compute-unit-price field, so `compute_unit_price` is 0;
+`total_fee_lamports` is the signature base fee plus the inline priority fee.
+
 ```json
 { "compute_unit_price":    { "op": "ge", "n": 1000 } }     // micro-lamports per CU
 { "compute_unit_limit":    { "op": "le", "n": 200000 } }   // CU

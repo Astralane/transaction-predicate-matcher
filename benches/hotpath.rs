@@ -70,7 +70,7 @@ fn filler_rule(id: i64) -> Rule {
 fn instr_scaling(c: &mut Criterion) {
     let mut g = c.benchmark_group("instr_scaling");
     let rs = RuleSet::new(vec![raydium_rule(1)]);
-    for &n in &[1usize, 4, 16, 64, 256, 1024] {
+    for &n in &[1usize, 4, 16, 64] {
         let bytes = tx_with_n_instructions(n);
         let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
         g.throughput(Throughput::Elements(n as u64));

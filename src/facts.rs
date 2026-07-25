@@ -118,19 +118,33 @@ impl<'a, D: TransactionData> ViewFacts<'a, D> {
                 .any(|&i| alt.and_then(|c| c.resolve(l.account_key, i)).is_none())
         });
 
-        // fees: scan ComputeBudget instructions once, count non-CB instructions.
-        let cb = budget::compute_budget_program_id();
-        let mut scan = budget::ComputeBudgetScan::default();
-        let mut non_cb = 0u64;
-        for ix in view.instructions_iter() {
-            let prog = resolve_index(view, alt, total_static, n_writable_alt, ix.program_id_index as usize);
-            if matches!(prog, MaybeKey::Known(p) if p == cb) {
-                scan.apply(ix.data);
-            } else {
-                non_cb += 1;
+        let fees = if let Some(config) = view.transaction_config() {
+            budget::v1_fees(
+                config.priority_fee_lamports(),
+                config.compute_unit_limit(),
+                nrs as u64,
+            )
+        } else {
+            // Legacy/V0 fees: scan ComputeBudget instructions once, count non-CB instructions.
+            let cb = budget::compute_budget_program_id();
+            let mut scan = budget::ComputeBudgetScan::default();
+            let mut non_cb = 0u64;
+            for ix in view.instructions_iter() {
+                let prog = resolve_index(
+                    view,
+                    alt,
+                    total_static,
+                    n_writable_alt,
+                    ix.program_id_index as usize,
+                );
+                if matches!(prog, MaybeKey::Known(p) if p == cb) {
+                    scan.apply(ix.data);
+                } else {
+                    non_cb += 1;
+                }
             }
-        }
-        let fees = budget::fees(scan, nrs as u64, non_cb);
+            budget::fees(scan, nrs as u64, non_cb)
+        };
 
         Self {
             view,
