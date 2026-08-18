@@ -94,6 +94,15 @@ pub fn triggers(p: &Pred) -> Trig {
     use Pred::*;
     match p {
         SignerContains(pk) => one(Kind::Signer, pk.0.as_ref()),
+        SignerIn(pks) => Trig::Keys(
+            pks.0
+                .iter()
+                .map(|pk| TrigKey {
+                    kind: Kind::Signer,
+                    bytes: pk.as_ref().to_vec(),
+                })
+                .collect(),
+        ),
         FeePayerIs(pk) => one(Kind::FeePayer, pk.0.as_ref()),
         AccountContains(pk) | WritableAccountContains(pk) | ReadonlyAccountContains(pk) => {
             one(Kind::Account, pk.0.as_ref())

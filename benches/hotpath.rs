@@ -49,6 +49,24 @@ fn tx_with_n_instructions(n_ix: usize) -> Vec<u8> {
     bincode::serialize(&tx).unwrap()
 }
 
+fn tx_with_signer(signer: Pubkey) -> Vec<u8> {
+    let msg = LegacyMessage {
+        header: MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 1,
+        },
+        account_keys: vec![signer, raydium()],
+        recent_blockhash: Default::default(),
+        instructions: vec![CompiledInstruction::new_from_raw_parts(1, vec![], vec![])],
+    };
+    let tx = VersionedTransaction {
+        signatures: vec![Signature::default(); 1],
+        message: VersionedMessage::Legacy(msg),
+    };
+    bincode::serialize(&tx).unwrap()
+}
+
 /// The canonical Raydium swapBaseIn rule (any_instruction { program_id_is && discriminator 09 }).
 fn raydium_rule(id: i64) -> Rule {
     let pred = Pred::AnyInstruction(Box::new(IxPred::And(vec![
@@ -104,5 +122,51 @@ fn rule_scaling(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, instr_scaling, rule_scaling);
+fn signer_membership_11k(c: &mut Criterion) {
+    let wallets = (0..11_000u32)
+        .map(|n| {
+            let mut bytes = [0u8; 32];
+            bytes[..4].copy_from_slice(&n.to_le_bytes());
+            Pubkey::new_from_array(bytes)
+        })
+        .collect::<Vec<_>>();
+    let bytes = tx_with_signer(wallets[10_999]);
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+
+    let old_rule = Rule::from_row(
+        1,
+        true,
+        OnUnknown::Skip,
+        1,
+        Pred::Or(
+            wallets
+                .iter()
+                .copied()
+                .map(|pk| Pred::SignerContains(Pk(pk)))
+                .collect(),
+        ),
+    )
+    .unwrap();
+    let new_rule = Rule::from_row(
+        1,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        Pred::SignerIn(PkSet(wallets.into_iter().collect())),
+    )
+    .unwrap();
+    let old = RuleSet::new(vec![old_rule]);
+    let new = RuleSet::new(vec![new_rule]);
+
+    let mut g = c.benchmark_group("signer_membership_11k");
+    g.bench_function("or_signer_contains", |b| {
+        b.iter(|| black_box(old.match_view(black_box(&view), None)));
+    });
+    g.bench_function("signer_in", |b| {
+        b.iter(|| black_box(new.match_view(black_box(&view), None)));
+    });
+    g.finish();
+}
+
+criterion_group!(benches, instr_scaling, rule_scaling, signer_membership_11k);
 criterion_main!(benches);

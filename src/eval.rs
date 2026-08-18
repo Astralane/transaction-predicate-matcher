@@ -116,6 +116,8 @@ pub fn eval_pred<D: TransactionData>(p: &Pred, tx: &ViewFacts<D>) -> Tri {
         InstructionCount { op, n } => b(cmp_sz(tx.num_instructions(), *op, *n)),
 
         SignerContains(pk) => b(tx.signer_contains(&pk.0)),
+        SignerIn(pks) => b((0..tx.num_signers())
+            .any(|i| matches!(tx.account(i), MaybeKey::Known(pk) if pks.0.contains(&pk)))),
         FeePayerIs(pk) => b(tx.fee_payer_is(&pk.0)),
         NumSigners { op, n } => b(cmp_sz(tx.num_signers(), *op, *n)),
         TxVersion(v) => b(tx.version() == *v),
@@ -166,6 +168,11 @@ pub fn eval_ix<D: TransactionData>(p: &IxPred, ix: &IxView<'_, '_, D>) -> Tri {
             .checked_add(bytes.0.len())
             .and_then(|end| ix.data().get(*offset..end))
             .is_some_and(|s| s == bytes.0.as_slice())),
+        DataContains(bytes) => b(!bytes.0.is_empty()
+            && ix
+                .data()
+                .windows(bytes.0.len())
+                .any(|window| window == bytes.0.as_slice())),
         DataSlice {
             offset,
             kind,

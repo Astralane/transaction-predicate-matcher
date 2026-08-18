@@ -6,6 +6,7 @@ mod common;
 use agave_transaction_view::transaction_view::SanitizedTransactionView;
 use common::*;
 use solana_message::v0::MessageAddressTableLookup;
+use solana_pubkey::Pubkey;
 use transaction_predicate_matcher::ast::*;
 use transaction_predicate_matcher::eval::{eval_pred, eval_rule};
 use transaction_predicate_matcher::index::*;
@@ -109,6 +110,145 @@ fn t2_data_slice_numeric() {
         value: SliceVal::Num(0),
     }));
     assert_eq!(eval_pred(&oob, &f), Tri::False);
+}
+
+#[test]
+fn t2_data_contains_j7_uri() {
+    // RPC transaction body for XYZ/J7 creation signature
+    // 5weRXT7rP5hrF4Ab1D5rpLdWqZqUvGxEZY6Cu6kJEfmhQFGcWLojaSjBsk6oPPNKqzbdbCxnUT84vSaPRmX3aYRz
+    // at slot 438173858 (mint CpjesB7n6WV8V21CPAZ1yUV25J73iQLBZvx2Gma3pump).
+    let bytes = hex::decode(concat!(
+        "02f731242d12288b0cb4b81ad41c3e1ad37a773c7bf248459334479be378b581b0665f63a27a94343f5ff765f8cc65aef7c2ba5bff655559703c81ffb2a4257a0de3453babf6a5db96b1cf82c1f9983297d24942a11da45bdd47e8e5dacca8649a78f4dd3cc32f1f56f13b89537ab145b096939e265600683fafe2e17c5f2c7a018",
+        "0020005103e6fee7cb51e2832bed22d33004dcc0853a96d1a1d06c3c4dac58b66528abd25afab14fa3c4958dee40b529e9ce24c905640bc5f04d48b1ae369818b6127020f07dd131776e9d220a5ee26d651779856eff659baf1dacbbc13f947e8807f46152425d2af2ca5e5637b5cba88f60a451d6893eca9b1ae44100b6624597451fdc071858952744f342c84cc8fe1567e2328b382b90db56d24ceabd68e42e80c1c4092a617915cb18c7a4c4c51659c2d7964fd87e86cd2435e55d47118940b60091a9e69fdca6be1999b8e6f4f9cb60bc29c377cffcdd754c1f704ee5de253a9103a9f4e902f2b3b1e2ce9e16c0acc233e4402794a11d2f6617ba5bef3f5198b8574a6bf7b76b8717316acb4049b1c26f8d56f72e4f1a892b4e2490c96b87f95923cea5c60396519dec70cc904999848f86b09ef2e2ef9c2d7d302729a6acdfc5d9eed88bc82b7b486a44909aa87d140daf5e3896bec5b8c47a1fc70cab8ebfcf14500000000000000000000000000000000000000000000000000000000000000000156e0f693665acf44db1568bf175baa5189cb97f5d2ff3b655d2bb6fd6d18b00306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000002f4c7ae322827d783dff60d0574ebef88bb766b96ab5f5d406b52b8d7e1621748c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f85982eaf79ecdd0e02d9d9e580223b134cf197e8cc076ce87c591e572a2793353c2070d01190502e09304000d000903d5dc3200000000000c10011702061b000b180f1115130a081d0c8001",
+        "d6904cec5f8b31b40b00000041736820746865206f776c030000004173683c00000068747470733a2f2f6d657461646174612e6a37747261636b65722e696f2f6d657461646174612f653865343166336263643633343433632e6a736f6e3e6fee7cb51e2832bed22d33004dcc0853a96d1a1d06c3c4dac58b66528abd2500000f07000300010b181601010c121b1201020603000b18091d0c14041c1a0e101966063d1201daebea2eea2a92b75800000001b2c400000000010b0200070c0200000080c3c901000000000b0200050c0200000040420f000000000001fe5adb299631b95babd31505f37312db1af2b2718d682f45358e4a90b2a00d2d052c07040a24090911060b2a05012502"
+    ))
+    .unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+    let f = ViewFacts::new(&view, None);
+
+    let predicate_json = serde_json::json!({
+        "or": [
+            {
+                "any_instruction": {
+                    "and": [
+                        { "program_id_is": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" },
+                        { "discriminator": { "offset": 0, "bytes": "181ec828051c0777" } },
+                        { "data_contains": "6d657461646174612e6a37747261636b65722e696f" }
+                    ]
+                }
+            },
+            {
+                "any_instruction": {
+                    "and": [
+                        { "program_id_is": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" },
+                        { "discriminator": { "offset": 0, "bytes": "d6904cec5f8b31b4" } },
+                        { "data_contains": "6d657461646174612e6a37747261636b65722e696f" }
+                    ]
+                }
+            }
+        ]
+    });
+    let rule = Rule::load_from_json(
+        7,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        &predicate_json,
+    )
+    .unwrap();
+    assert!(eval_rule(&rule, &f));
+
+    let wrong_uri_json = serde_json::json!({
+        "any_instruction": {
+            "data_contains": "6d657461646174612e6578616d706c652e636f6d"
+        }
+    });
+    let wrong_uri = Rule::load_from_json(
+        8,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        &wrong_uri_json,
+    )
+    .unwrap();
+    assert!(!eval_rule(&wrong_uri, &f));
+
+    let empty_json = serde_json::json!({
+        "any_instruction": { "data_contains": "" }
+    });
+    assert!(Rule::load_from_json(
+        9,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        &empty_json,
+    )
+    .is_err());
+}
+
+#[test]
+fn bulk_signer_in_uses_indexed_set() {
+    let signers = (0..11_000u32)
+        .map(|n| {
+            let mut bytes = [0u8; 32];
+            bytes[..4].copy_from_slice(&n.to_le_bytes());
+            Pubkey::new_from_array(bytes)
+        })
+        .collect::<Vec<_>>();
+    let target = signers[10_999];
+    let predicate_json = serde_json::json!({
+        "signer_in": signers.iter().map(ToString::to_string).collect::<Vec<_>>()
+    });
+    let rule = Rule::load_from_json(
+        10,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        &predicate_json,
+    )
+    .unwrap();
+
+    match rule_triggers(&rule) {
+        Trig::Keys(keys) => assert_eq!(keys.len(), 11_000),
+        Trig::Always => panic!("signer_in must be candidate-indexed"),
+    }
+
+    let rules = RuleSet::new(vec![rule]);
+    let matching = legacy_bytes(
+        vec![target, system()],
+        1,
+        0,
+        1,
+        vec![ci(1, vec![0], vec![])],
+    );
+    let matching_view =
+        SanitizedTransactionView::try_new_sanitized(matching.as_slice(), true).unwrap();
+    assert_eq!(
+        rules.match_view(&matching_view, None),
+        MatchResult::Matched(10)
+    );
+
+    let absent = Pubkey::new_from_array([0xff; 32]);
+    let non_matching = legacy_bytes(
+        vec![absent, system()],
+        1,
+        0,
+        1,
+        vec![ci(1, vec![0], vec![])],
+    );
+    let non_matching_view =
+        SanitizedTransactionView::try_new_sanitized(non_matching.as_slice(), true).unwrap();
+    assert_eq!(rules.match_view(&non_matching_view, None), MatchResult::NoMatch);
+
+    let empty_json = serde_json::json!({ "signer_in": [] });
+    assert!(Rule::load_from_json(
+        11,
+        true,
+        OnUnknown::Skip,
+        ENGINE_SCHEMA_VERSION,
+        &empty_json,
+    )
+    .is_err());
 }
 
 // ---- T3 / T5 / T7 fixtures: a v0 tx with an unresolved ALT slot ----
