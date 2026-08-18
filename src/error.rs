@@ -14,6 +14,10 @@ pub enum LoadError {
     UnsupportedSchemaVersion { rule: u32, engine: u32 },
     #[error("discriminator bytes must be non-empty")]
     EmptyDiscriminator,
+    #[error("data_contains bytes must be non-empty")]
+    EmptyDataContains,
+    #[error("signer_in must contain at least one pubkey")]
+    EmptySignerIn,
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 }

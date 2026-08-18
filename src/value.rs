@@ -1,5 +1,6 @@
 //! Wire-facing scalar types. All validate at deserialization so a malformed rule fails to load.
 
+use rustc_hash::FxHashSet;
 use serde::Deserialize;
 use solana_pubkey::Pubkey;
 use std::str::FromStr;
@@ -12,6 +13,20 @@ impl<'de> Deserialize<'de> for Pk {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
         Pubkey::from_str(&s).map(Pk).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A pubkey set on the wire, parsed and deduplicated once when the rule loads.
+#[derive(Clone, Debug)]
+pub struct PkSet(pub FxHashSet<Pubkey>);
+
+impl<'de> Deserialize<'de> for PkSet {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Vec::<String>::deserialize(d)?
+            .into_iter()
+            .map(|value| Pubkey::from_str(&value).map_err(serde::de::Error::custom))
+            .collect::<Result<FxHashSet<_>, _>>()
+            .map(PkSet)
     }
 }
 

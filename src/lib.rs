@@ -23,4 +23,4 @@ pub use eval::{eval_ix, eval_pred, eval_rule, eval_slice};
 pub use facts::{AccountLookupTableCache, AltLookup, IxView, MaybeKey, ViewFacts};
 pub use index::{CandidateIndex, Trig, TrigKey};
 pub use tri::Tri;
-pub use value::{Bytes, Cmp, Pk, SliceKind, SliceVal, TxVer};
+pub use value::{Bytes, Cmp, Pk, PkSet, SliceKind, SliceVal, TxVer};
