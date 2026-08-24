@@ -1,6 +1,7 @@
 //! Test helpers: build serialized transactions so tests can construct a `SanitizedTransactionView`.
 #![allow(dead_code)] // shared across test binaries; not every binary uses every helper
 
+use agave_transaction_view::sanitize::SanitizeConfig;
 use solana_message::compiled_instruction::CompiledInstruction;
 use solana_message::v0::{Message as V0Message, MessageAddressTableLookup};
 use solana_message::{Message as LegacyMessage, MessageHeader, VersionedMessage};
@@ -8,6 +9,14 @@ use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use solana_transaction::versioned::VersionedTransaction;
 use std::str::FromStr;
+
+// Current protocol values, mirroring agave-transaction-view's own tests.
+pub const SANITIZE_CONFIG: SanitizeConfig = SanitizeConfig {
+    min_requested_heap_size: 32 * 1024,
+    max_requested_heap_size: 256 * 1024,
+    max_instructions: 64,
+    max_accounts_per_instruction: Some(255),
+};
 
 pub fn pk(n: u8) -> Pubkey {
     Pubkey::new_from_array([n; 32])

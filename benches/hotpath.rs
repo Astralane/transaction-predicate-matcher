@@ -2,6 +2,7 @@
 //! index buys over the brute-force scan. `instr_scaling` exposes the O(n^2) instruction walk
 //! (`instruction(idx)` is `instructions_iter().nth(idx)`).
 
+use agave_transaction_view::sanitize::SanitizeConfig;
 use agave_transaction_view::transaction_view::SanitizedTransactionView;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use solana_message::compiled_instruction::CompiledInstruction;
@@ -10,6 +11,13 @@ use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use solana_transaction::versioned::VersionedTransaction;
 use std::str::FromStr;
+
+const SANITIZE_CONFIG: SanitizeConfig = SanitizeConfig {
+    min_requested_heap_size: 32 * 1024,
+    max_requested_heap_size: 256 * 1024,
+    max_instructions: 64,
+    max_accounts_per_instruction: Some(255),
+};
 use transaction_predicate_matcher::ast::*;
 use transaction_predicate_matcher::value::*;
 use transaction_predicate_matcher::RuleSet;
@@ -90,7 +98,7 @@ fn instr_scaling(c: &mut Criterion) {
     let rs = RuleSet::new(vec![raydium_rule(1)]);
     for &n in &[1usize, 4, 16, 64] {
         let bytes = tx_with_n_instructions(n);
-        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), &SANITIZE_CONFIG).unwrap();
         g.throughput(Throughput::Elements(n as u64));
         g.bench_with_input(BenchmarkId::from_parameter(n), &view, |b, view| {
             b.iter(|| black_box(rs.match_view(black_box(view), None)));
@@ -103,7 +111,7 @@ fn rule_scaling(c: &mut Criterion) {
     let mut g = c.benchmark_group("rule_scaling");
     // realistic-ish tx: 6 instructions, the last is the Raydium swap.
     let bytes = tx_with_n_instructions(6);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), &SANITIZE_CONFIG).unwrap();
 
     for &n_rules in &[1usize, 10, 100, 1000] {
         // 1 matching rule at the END, n_rules-1 fillers first => index must skip the fillers.
@@ -131,7 +139,7 @@ fn signer_membership_11k(c: &mut Criterion) {
         })
         .collect::<Vec<_>>();
     let bytes = tx_with_signer(wallets[10_999]);
-    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true).unwrap();
+    let view = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), &SANITIZE_CONFIG).unwrap();
 
     let old_rule = Rule::from_row(
         1,
