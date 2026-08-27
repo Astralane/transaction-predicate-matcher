@@ -146,7 +146,7 @@ proptest! {
         bytes in arb_legacy_bytes(),
         rules in arb_rules(arb_disc_supported().boxed(), 32),
     ) {
-        let Ok(view) = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true) else {
+        let Ok(view) = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), &SANITIZE_CONFIG) else {
             return Ok(()); // sanitizer rejected this combination; skip
         };
         prop_assume!(!rules.is_empty());
@@ -163,7 +163,7 @@ proptest! {
         bytes in arb_legacy_bytes(),
         rules in arb_rules(prop::collection::vec(any::<u8>(), 1..16).boxed(), 1_000_000),
     ) {
-        let Ok(view) = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), true) else {
+        let Ok(view) = SanitizedTransactionView::try_new_sanitized(bytes.as_slice(), &SANITIZE_CONFIG) else {
             return Ok(());
         };
         prop_assume!(!rules.is_empty());

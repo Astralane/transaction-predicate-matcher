@@ -14,14 +14,14 @@ thiserror = "1"
 # Zero-copy view over a serialized transaction. Kept on the same major line as solana-pubkey so the
 # `Pubkey` type is shared with consumers; bumping one without the other yields two incompatible
 # `Pubkey` types and a `SanitizedTransactionView` the consumer cannot pass in.
-agave-transaction-view = { version = "=4.1.0-beta.1", features = ["agave-unstable-api"] }
+agave-transaction-view = { version = "=4.2.1", features = ["agave-unstable-api"] }
 
 [dev-dependencies]
 serde_json = "1"
 bincode = "1"
 solana-signature = "3.4"
-solana-message = { version = "=4.2.0", features = ["serde"] }
-solana-transaction = { version = "=4.1.2", features = ["serde"] }
+solana-message = { version = "4.2.3", features = ["serde"] }
+solana-transaction = { version = "4.1.4", features = ["serde"] }
 proptest = "1"
 criterion = "0.5"
 
