@@ -16,7 +16,7 @@ const SANITIZE_CONFIG: SanitizeConfig = SanitizeConfig {
     min_requested_heap_size: 32 * 1024,
     max_requested_heap_size: 256 * 1024,
     max_instructions: 64,
-    max_accounts_per_instruction: Some(255),
+    max_accounts_per_instruction: 255,
 };
 use transaction_predicate_matcher::ast::*;
 use transaction_predicate_matcher::value::*;
